@@ -1,115 +1,187 @@
+'use client';
+
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
+import RightPanel from './components/layout/RightPanel';
+
+interface Transcript {
+  id: string;
+  title: string;
+  summary: string;
+  createdAt: string;
+  duration: string;
+  speakers: { name: string; percentage: number }[];
+  participants?: number;
+  comments?: number;
+  highlights?: number;
+}
 
 export default function Home() {
+  const [transcripts, setTranscripts] = useState<Transcript[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Fetch transcripts
+    fetch('/api/transcripts')
+      .then(res => res.json())
+      .then(data => {
+        setTranscripts(data.transcripts || []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  // Group by date
+  const groupedTranscripts = transcripts.reduce((acc, transcript) => {
+    const date = new Date(transcript.createdAt);
+    const dateKey = date.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+    
+    if (!acc[dateKey]) {
+      acc[dateKey] = [];
+    }
+    acc[dateKey].push(transcript);
+    return acc;
+  }, {} as Record<string, Transcript[]>);
+
   return (
-    <main className="min-h-screen">
-      {/* Hero Section */}
-      <section className="bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-800 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32">
-          <div className="text-center">
-            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 leading-tight">
-              AI-Powered Audio
-              <br />
-              <span className="bg-gradient-to-r from-yellow-200 to-pink-200 bg-clip-text text-transparent">
-                Transcription
-              </span>
-            </h1>
-            <p className="text-xl md:text-2xl text-indigo-100 mb-10 max-w-3xl mx-auto">
-              Transform your audio and video files into accurate transcripts with intelligent AI summaries
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link
-                href="/upload"
-                className="bg-white text-indigo-600 px-8 py-4 rounded-full font-bold text-lg hover:shadow-2xl hover:scale-105 transition-all"
-              >
-                Start Transcribing
-              </Link>
-              <Link
-                href="/dashboard"
-                className="bg-indigo-500/30 backdrop-blur-sm text-white border-2 border-white/30 px-8 py-4 rounded-full font-bold text-lg hover:bg-indigo-500/50 transition-all"
-              >
-                View Dashboard
-              </Link>
+    <>
+      <div className="pr-80">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-200 px-8 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-900">Conversations</h1>
+            <div className="flex items-center gap-2">
+              <select className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option>For you</option>
+                <option>All conversations</option>
+                <option>Shared with me</option>
+              </select>
             </div>
           </div>
         </div>
-      </section>
 
-      {/* Features Section */}
-      <section className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-4xl font-bold text-center text-gray-900 mb-4">
-            Powerful Features
-          </h2>
-          <p className="text-xl text-center text-gray-600 mb-16 max-w-2xl mx-auto">
-            Everything you need to transcribe, understand, and organize your audio content
-          </p>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {/* Feature 1 */}
-            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-8 rounded-2xl border border-indigo-100 hover:shadow-xl transition-shadow">
-              <div className="text-4xl mb-4">🎙️</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">
-                Real-time Transcription
-              </h3>
-              <p className="text-gray-600">
-                Get accurate transcriptions powered by advanced speech recognition technology
-              </p>
+        {/* Conversations List */}
+        <div className="px-8 py-6">
+          {loading ? (
+            <div className="text-center py-12 text-gray-500">Loading conversations...</div>
+          ) : Object.keys(groupedTranscripts).length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">📝</div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">No conversations yet</h2>
+              <p className="text-gray-600 mb-6">Start by recording or importing an audio file</p>
+              <Link
+                href="/record"
+                className="inline-block px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+              >
+                Start Recording
+              </Link>
             </div>
-
-            {/* Feature 2 */}
-            <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-8 rounded-2xl border border-purple-100 hover:shadow-xl transition-shadow">
-              <div className="text-4xl mb-4">🤖</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">
-                AI Summaries
-              </h3>
-              <p className="text-gray-600">
-                Automatically generate intelligent summaries from your transcripts with AI
-              </p>
+          ) : (
+            <div className="space-y-8">
+              {Object.entries(groupedTranscripts).map(([date, items]) => (
+                <div key={date}>
+                  <h2 className="text-sm font-semibold text-gray-500 mb-3">{date}</h2>
+                  <div className="space-y-4">
+                    {items.map((transcript) => (
+                      <ConversationCard key={transcript.id} transcript={transcript} />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
+          )}
+        </div>
+      </div>
+      <RightPanel />
+    </>
+  );
+}
 
-            {/* Feature 3 */}
-            <div className="bg-gradient-to-br from-pink-50 to-red-50 p-8 rounded-2xl border border-pink-100 hover:shadow-xl transition-shadow">
-              <div className="text-4xl mb-4">🌍</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">
-                Multi-language Support
-              </h3>
-              <p className="text-gray-600">
-                Transcribe audio in multiple languages with high accuracy
-              </p>
-            </div>
+function ConversationCard({ transcript }: { transcript: Transcript }) {
+  const [showFullSummary, setShowFullSummary] = useState(false);
+  const summaryPreview = transcript.summary?.slice(0, 200) || 'No summary available';
+  const hasMore = transcript.summary && transcript.summary.length > 200;
 
-            {/* Feature 4 */}
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-8 rounded-2xl border border-blue-100 hover:shadow-xl transition-shadow">
-              <div className="text-4xl mb-4">📤</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">
-                Easy Upload
-              </h3>
-              <p className="text-gray-600">
-                Upload audio and video files in multiple formats with drag-and-drop support
-              </p>
+  return (
+    <Link href={`/transcripts/${transcript.id}`}>
+      <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-lg transition-shadow cursor-pointer">
+        {/* Header */}
+        <div className="flex items-start gap-4 mb-3">
+          <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold flex-shrink-0">
+            {transcript.speakers?.[0]?.name?.[0] || 'U'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">{transcript.title}</h3>
+            <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
+              <span>{new Date(transcript.createdAt).toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}</span>
+              <span>·</span>
+              <span>{transcript.duration}</span>
+              {transcript.speakers?.length > 0 && (
+                <>
+                  <span>·</span>
+                  <span>{transcript.speakers[0].name}</span>
+                </>
+              )}
+              <span>·</span>
+              <span># General</span>
             </div>
           </div>
         </div>
-      </section>
 
-      {/* CTA Section */}
-      <section className="py-20 bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-4xl font-bold mb-6">
-            Ready to get started?
-          </h2>
-          <p className="text-xl text-indigo-100 mb-8">
-            Upload your first audio file and experience the power of AI transcription
+        {/* Summary Preview */}
+        <div className="text-sm text-gray-700 mb-3">
+          <p className="line-clamp-3">
+            {showFullSummary ? transcript.summary : summaryPreview}
+            {hasMore && !showFullSummary && '...'}
           </p>
-          <Link
-            href="/upload"
-            className="inline-block bg-white text-indigo-600 px-10 py-4 rounded-full font-bold text-lg hover:shadow-2xl hover:scale-105 transition-all"
-          >
-            Upload Now
-          </Link>
+          {hasMore && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                setShowFullSummary(!showFullSummary);
+              }}
+              className="text-blue-600 hover:text-blue-700 font-medium mt-1"
+            >
+              {showFullSummary ? 'Show less' : 'Show more'}
+            </button>
+          )}
         </div>
-      </section>
-    </main>
+
+        {/* Footer */}
+        <div className="flex items-center gap-4 text-sm text-gray-500">
+          <div className="flex items-center gap-1">
+            <div className="flex -space-x-2">
+              {transcript.speakers?.slice(0, 3).map((speaker, i) => (
+                <div
+                  key={i}
+                  className="w-6 h-6 rounded-full bg-blue-500 border-2 border-white flex items-center justify-center text-white text-xs font-semibold"
+                >
+                  {speaker.name[0]}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+            </svg>
+            <span>{transcript.comments || 0}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+            </svg>
+            <span>{transcript.highlights || 0}</span>
+          </div>
+        </div>
+      </div>
+    </Link>
   );
 }

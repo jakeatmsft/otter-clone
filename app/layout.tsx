@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Navbar from "./components/Navbar";
+import Sidebar from "./components/layout/Sidebar";
+import TopBar from "./components/layout/TopBar";
 
 export const metadata: Metadata = {
   title: "Otter Clone - AI Transcription",
@@ -14,9 +15,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-gray-50">
-        <Navbar />
-        {children}
+      <body className="bg-gray-50 antialiased">
+        <Sidebar />
+        <TopBar />
+        <main className="ml-60 mt-16 min-h-screen">
+          {children}
+        </main>
       </body>
     </html>
   );
