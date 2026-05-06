@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile } from 'fs/promises';
+import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 
 export async function POST(request: NextRequest) {
@@ -19,7 +19,9 @@ export async function POST(request: NextRequest) {
 
     // Save to public/uploads
     const filename = `${Date.now()}-${file.name}`;
-    const filepath = join(process.cwd(), 'public', 'uploads', filename);
+    const uploadsDir = join(process.cwd(), 'public', 'uploads');
+    await mkdir(uploadsDir, { recursive: true });
+    const filepath = join(uploadsDir, filename);
     await writeFile(filepath, buffer);
 
     return NextResponse.json({ filename });

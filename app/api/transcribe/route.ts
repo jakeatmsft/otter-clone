@@ -3,12 +3,19 @@ import OpenAI from 'openai';
 import { createReadStream } from 'fs';
 import { join } from 'path';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 export async function POST(request: NextRequest) {
   try {
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!openaiKey || /your_openai_api_key_here/i.test(openaiKey)) {
+      return NextResponse.json(
+        {
+          error:
+            'OPENAI_API_KEY is missing or invalid. Update .env.local with a real key and restart the server.',
+        },
+        { status: 500 }
+      );
+    }
+
     const { filename } = await request.json();
     
     if (!filename) {
@@ -19,6 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     const filepath = join(process.cwd(), 'public', 'uploads', filename);
+    const openai = new OpenAI({ apiKey: openaiKey });
     
     // Transcribe with Whisper
     const transcription = await openai.audio.transcriptions.create({
