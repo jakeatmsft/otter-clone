@@ -26,6 +26,8 @@ export default function TranscriptDetail() {
   const [data, setData] = useState<TranscriptData | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'summary' | 'transcript'>('summary');
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
 
   useEffect(() => {
     // Fetch transcript data
@@ -40,6 +42,42 @@ export default function TranscriptDetail() {
       })
       .catch(() => setLoading(false));
   }, [id]);
+
+  const handleGenerateSummary = async () => {
+    if (!data || isGeneratingSummary) {
+      return;
+    }
+
+    setIsGeneratingSummary(true);
+    setSummaryError('');
+
+    try {
+      const response = await fetch(`/api/transcripts/${id}/summary`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+
+      if (!response.ok || !result.summary) {
+        throw new Error(result.error || 'Failed to generate summary.');
+      }
+
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              summary: String(result.summary).trim(),
+            }
+          : current
+      );
+      setActiveTab('summary');
+    } catch (error) {
+      setSummaryError(
+        error instanceof Error ? error.message : 'Failed to generate summary.'
+      );
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
@@ -93,6 +131,17 @@ export default function TranscriptDetail() {
               </button>
             </div>
             <div className="flex items-center gap-3">
+              <button
+                onClick={handleGenerateSummary}
+                disabled={isGeneratingSummary}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors disabled:bg-blue-300"
+              >
+                {isGeneratingSummary
+                  ? 'Summarizing...'
+                  : data.summary?.trim()
+                    ? 'Regenerate with Azure OpenAI'
+                    : 'Summarize with Azure OpenAI'}
+              </button>
               <button className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors">
                 Share
               </button>
@@ -107,6 +156,11 @@ export default function TranscriptDetail() {
                 </svg>
               </button>
             </div>
+            {summaryError && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {summaryError}
+              </div>
+            )}
           </div>
         </div>
 
@@ -187,6 +241,8 @@ export default function TranscriptDetail() {
 }
 
 function SummaryTab({ data }: { data: TranscriptData }) {
+  const hasSummary = typeof data.summary === 'string' && data.summary.trim();
+
   return (
     <div className="space-y-8">
       {/* Overview */}
@@ -195,8 +251,10 @@ function SummaryTab({ data }: { data: TranscriptData }) {
           <span className="text-xl">≡</span>
           Overview
         </h2>
-        <div className="bg-gray-50 rounded-lg p-6 text-gray-700 leading-relaxed">
-          {data.summary || data.transcript || 'No summary available'}
+        <div className="bg-gray-50 rounded-lg p-6 text-gray-700 leading-relaxed whitespace-pre-wrap">
+          {hasSummary
+            ? data.summary
+            : 'No summary available yet. Generate one to get a concise bullet-point recap.'}
         </div>
       </section>
 

@@ -1010,14 +1010,14 @@ export default function RecordPage() {
                   />
                 </label>
 
-                <label className="block">
+                <label className="block min-w-0">
                   <span className="text-sm font-medium text-gray-700">Audio input source</span>
-                  <div className="mt-1 flex gap-2">
+                  <div className="mt-1 flex min-w-0 gap-2">
                     <select
                       value={selectedInputId}
                       onChange={(event) => setSelectedInputId(event.target.value)}
                       disabled={isRecording || isProcessing || isPreparing || !displayedInputs.length}
-                      className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                      className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
                     >
                       {displayedInputs.length === 0 ? (
                         <option value="">No microphone detected</option>
@@ -1037,7 +1037,7 @@ export default function RecordPage() {
                         });
                       }}
                       disabled={isRecording || isProcessing || isPreparing}
-                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:bg-gray-50 disabled:text-gray-400"
+                      className="shrink-0 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:bg-gray-50 disabled:text-gray-400"
                     >
                       Refresh
                     </button>

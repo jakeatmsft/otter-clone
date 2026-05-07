@@ -1,15 +1,22 @@
-# 🦊 Otter Clone - AI Transcription App
+# seaotter - AI Transcription App
 
-A Next.js application that transcribes audio and generates AI summaries using Azure OpenAI.
+A Next.js application for transcription, live recording, and Azure OpenAI-powered summaries.
 
 ## Features
 
 - 🎙️ Audio file upload (MP3, WAV, M4A, MP4)
-- 🔴 Live recording with Azure Realtime transcription over WebSocket
+- 🔴 Live recording with Azure Realtime transcription over WebSocket and live transcript preview
 - 📝 Azure OpenAI transcription with timestamped segments
 - 🧠 Azure OpenAI summaries via the Responses API
+- 📌 On-demand concise bullet summaries from the transcript detail page
 - 💾 Download transcripts as TXT
 - 🎨 Clean, modern UI with Tailwind CSS
+
+## Recent Updates
+
+- The app is branded as `seaotter` in the browser UI and docs.
+- Transcript detail pages now include a `Summarize with Azure OpenAI` action that saves a concise bullet summary back onto the current transcript.
+- The Record page keeps a live transcript preview while recording and handles long input-device names without overflowing the form card.
 
 ## Setup
 
@@ -26,7 +33,7 @@ A Next.js application that transcribes audio and generates AI summaries using Az
    ```
    
    Then edit `.env.local` with your Azure values:
-   - `AZURE_AI_PROJECT_ENDPOINT` for summarization
+   - `AZURE_AI_PROJECT_ENDPOINT` for summarization and transcript-page summary regeneration
    - `AZURE_OPENAI_ENDPOINT` for transcription
    - `OPENAI_API_VERSION` for the Azure OpenAI transcription API version
    - `AZURE_OPENAI_DEPLOYMENT` for summarization
@@ -66,10 +73,11 @@ npm start
 
 ## Usage
 
-1. Use **Upload** for batch transcription + summarization.
-2. Use **Record** for live websocket transcription.
-3. After a live recording stops, the app saves the realtime transcript directly.
-4. View or download the saved transcript.
+1. Use **Upload** for batch transcription and initial summarization.
+2. Use **Record** for live websocket transcription with a live transcript preview.
+3. After a live recording stops, the app saves the recording and transcript locally.
+4. Open a transcript and click **Summarize with Azure OpenAI** to generate or refresh a concise bullet summary.
+5. View or download the saved transcript.
 
 ## Tech Stack
 
@@ -84,7 +92,7 @@ npm start
 ## Project Structure
 
 ```
-otter-clone/
+seaotter/
 ├── app/
 │   ├── page.tsx                  # Upload page
 │   ├── layout.tsx                # Root layout
@@ -93,12 +101,19 @@ otter-clone/
 │   │   ├── upload/route.ts       # File upload handler
 │   │   ├── transcribe/route.ts   # Batch Azure OpenAI transcription
 │   │   ├── summarize/route.ts    # Azure OpenAI summarization
-│   │   └── transcripts/route.ts  # Transcript list + save endpoint
+│   │   └── transcripts/
+│   │       ├── route.ts          # Transcript list + save endpoint
+│   │       └── [id]/
+│   │           ├── route.ts      # Transcript detail endpoint
+│   │           └── summary/route.ts # Azure summary regeneration for a saved transcript
 │   ├── record/                   # Live recording page
 │   └── transcripts/
 │       └── [id]/
-│           ├── page.tsx          # Transcript viewer
+│           ├── page.tsx          # Transcript viewer + summary trigger
 │           └── download-button.tsx
+├── lib/
+│   ├── azure-openai.ts           # Azure OpenAI clients and config
+│   └── transcript-store.ts       # Transcript persistence helpers
 ├── realtime-bridge.js            # Azure realtime websocket bridge
 ├── server.js                     # Custom Next server with WS upgrade handling
 ├── public/uploads/               # Uploaded files (temp)
@@ -109,10 +124,11 @@ otter-clone/
 ## Notes
 
 - Files are saved locally in `public/uploads/` and `data/transcripts/`
+- Transcript-page summary generation updates the existing saved transcript rather than creating a duplicate entry
 - For production, consider using cloud storage (S3, etc.)
 - Transcription time depends on audio length (typically 1-2 min per 10 min of audio)
 - `npm run dev` and `npm start` both go through `server.js` so the `/api/realtime-transcription` websocket route works
 
 ---
 
-Built with 🦊 by Kip
+Built for seaotter by Kip

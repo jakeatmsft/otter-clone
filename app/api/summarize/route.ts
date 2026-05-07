@@ -56,8 +56,15 @@ Format your response clearly with headers.`;
 
     return NextResponse.json({ summary, id: saved.id });
   } catch (error) {
+    let scope: string | undefined;
+    try {
+      scope = getAzureSummarizationScope();
+    } catch {
+      scope = undefined;
+    }
+
     const message = normalizeAzureCredentialError(error, {
-      scope: getAzureSummarizationScope(),
+      scope,
       surface: 'summarization',
     });
     console.error('Summarization error:', error);
