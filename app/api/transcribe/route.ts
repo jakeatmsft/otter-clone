@@ -1,23 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
 import { createReadStream } from 'fs';
 import { join } from 'path';
+import {
+  createAzureTranscriptionClient,
+  getAzureOpenAIEndpoint,
+  getAzureTranscriptionDeployment,
+  getAzureTranscriptionScope,
+  getAzureTranscriptionResponseFormat,
+  normalizeAzureCredentialError,
+} from '@/lib/azure-openai';
+
+type RawTranscriptionResponse = {
+  duration?: number;
+  segments?: Array<{ start?: number; end?: number; text?: string }>;
+  text?: string;
+  words?: Array<{ start?: number; end?: number; word?: string }>;
+};
+
+let cachedTranscriptionResponseFormat: 'json' | 'text' | 'verbose_json' | null = null;
+
+function getSegmentDurationSeconds(
+  segments: Array<{ start?: number; end?: number; text?: string }>
+) {
+  return segments.reduce((max, segment) => Math.max(max, segment.end || segment.start || 0), 0);
+}
+
+function normalizeTranscriptionResponse(transcription: string | RawTranscriptionResponse) {
+  if (typeof transcription === 'string') {
+    return {
+      durationSeconds: undefined,
+      segments: [],
+      transcript: transcription,
+    };
+  }
+
+  const transcript = typeof transcription.text === 'string' ? transcription.text : '';
+  const segments = Array.isArray(transcription.segments)
+    ? transcription.segments.map((segment) => ({
+        end: segment.end,
+        start: segment.start,
+        text: segment.text || '',
+      }))
+    : Array.isArray(transcription.words)
+      ? transcription.words.map((word) => ({
+          end: word.end,
+          start: word.start,
+          text: word.word || '',
+        }))
+      : [];
+
+  return {
+    durationSeconds:
+      typeof transcription.duration === 'number'
+        ? transcription.duration
+        : segments.length
+          ? getSegmentDurationSeconds(segments)
+          : undefined,
+    segments,
+    transcript,
+  };
+}
+
+function shouldRetryWithJson(message: string, responseFormat: 'json' | 'text' | 'verbose_json') {
+  return (
+    responseFormat === 'verbose_json' &&
+    /response_format .* not compatible/i.test(message)
+  );
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const openaiKey = process.env.OPENAI_API_KEY;
-    if (!openaiKey || /your_openai_api_key_here/i.test(openaiKey)) {
-      return NextResponse.json(
-        {
-          error:
-            'OPENAI_API_KEY is missing or invalid. Update .env.local with a real key and restart the server.',
-        },
-        { status: 500 }
-      );
-    }
-
     const { filename } = await request.json();
-    
+
     if (!filename) {
       return NextResponse.json(
         { error: 'No filename provided' },
@@ -26,24 +80,75 @@ export async function POST(request: NextRequest) {
     }
 
     const filepath = join(process.cwd(), 'public', 'uploads', filename);
-    const openai = new OpenAI({ apiKey: openaiKey });
-    
-    // Transcribe with Whisper
-    const transcription = await openai.audio.transcriptions.create({
-      file: createReadStream(filepath) as any,
-      model: 'whisper-1',
-      response_format: 'verbose_json',
-      timestamp_granularities: ['segment'],
-    });
+    const openai = createAzureTranscriptionClient();
+    const model = getAzureTranscriptionDeployment();
+
+    const transcribeWithFormat = async (responseFormat: 'json' | 'text' | 'verbose_json') => {
+      return openai.audio.transcriptions.create({
+        file: createReadStream(filepath) as any,
+        model,
+        response_format: responseFormat,
+        ...(responseFormat === 'verbose_json'
+          ? { timestamp_granularities: ['segment'] as const }
+          : {}),
+      });
+    };
+
+    let responseFormat = cachedTranscriptionResponseFormat || getAzureTranscriptionResponseFormat();
+    let transcription: string | RawTranscriptionResponse;
+
+    try {
+      transcription = await transcribeWithFormat(responseFormat);
+      cachedTranscriptionResponseFormat = responseFormat;
+    } catch (error) {
+      const message = (error as Error).message;
+
+      if (!shouldRetryWithJson(message, responseFormat)) {
+        throw error;
+      }
+
+      console.warn(
+        `Transcription deployment "${model}" does not support ${responseFormat}; retrying with json.`
+      );
+
+      responseFormat = 'json';
+      transcription = await transcribeWithFormat(responseFormat);
+      cachedTranscriptionResponseFormat = responseFormat;
+    }
+
+    const normalized = normalizeTranscriptionResponse(transcription);
 
     return NextResponse.json({
-      transcript: transcription.text,
-      segments: transcription.segments || [],
+      durationSeconds: normalized.durationSeconds,
+      segments: normalized.segments,
+      transcript: normalized.transcript,
     });
   } catch (error) {
+    const message = (error as Error).message;
+    const normalizedAuthError = normalizeAzureCredentialError(error, {
+      scope: getAzureTranscriptionScope(),
+      surface: 'batch transcription',
+    });
+
+    if (normalizedAuthError !== message) {
+      return NextResponse.json(
+        { error: `Transcription failed: ${normalizedAuthError}` },
+        { status: 500 }
+      );
+    }
+
+    if (/deployment for this resource does not exist/i.test(message)) {
+      return NextResponse.json(
+        {
+          error: `Transcription failed: Azure could not find deployment "${getAzureTranscriptionDeployment()}" on ${getAzureOpenAIEndpoint()}. Set AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT to the exact Azure deployment name for your speech-to-text model, or point AZURE_OPENAI_ENDPOINT at the Azure OpenAI resource that hosts that deployment.`,
+        },
+        { status: 500 }
+      );
+    }
+
     console.error('Transcription error:', error);
     return NextResponse.json(
-      { error: 'Transcription failed: ' + (error as Error).message },
+      { error: 'Transcription failed: ' + message },
       { status: 500 }
     );
   }

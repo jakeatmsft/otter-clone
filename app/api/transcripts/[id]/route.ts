@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { buildUploadedAudioUrl } from '@/lib/transcript-store';
 
 export async function GET(
   request: Request,
@@ -27,6 +28,7 @@ export async function GET(
       title: data.title || 'Untitled',
       transcript: data.transcript || '',
       summary: data.summary || '',
+      audioUrl: buildUploadedAudioUrl(data.audioFilename),
       actionItems: data.actionItems || [],
       outline: data.outline || [],
       keywords: data.keywords || [],

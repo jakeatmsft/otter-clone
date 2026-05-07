@@ -9,6 +9,7 @@ interface TranscriptData {
   id: string;
   title: string;
   transcript: string;
+  audioUrl?: string;
   summary?: string;
   actionItems?: string[];
   outline?: { topic: string; points: string[] }[];
@@ -25,7 +26,6 @@ export default function TranscriptDetail() {
   const [data, setData] = useState<TranscriptData | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'summary' | 'transcript'>('summary');
-  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     // Fetch transcript data
@@ -33,6 +33,9 @@ export default function TranscriptDetail() {
       .then(res => res.json())
       .then(data => {
         setData(data);
+        setActiveTab(
+          typeof data.summary === 'string' && data.summary.trim() ? 'summary' : 'transcript'
+        );
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -154,51 +157,27 @@ export default function TranscriptDetail() {
 
       {/* Audio Player */}
       <div className="fixed bottom-0 left-60 right-0 bg-white border-t border-gray-200 px-8 py-4 z-20">
-        <div className="flex items-center gap-4 max-w-5xl mx-auto">
-          <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setIsPlaying(!isPlaying)}
-            className="p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
-          >
-            {isPlaying ? (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" />
-              </svg>
-            ) : (
-              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            )}
-          </button>
-          <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-          <span className="text-sm text-gray-600 min-w-[3rem]">1x</span>
-          
-          <div className="flex-1 flex items-center gap-3">
-            <div className="flex-1 bg-gray-200 rounded-full h-1 cursor-pointer">
-              <div className="bg-blue-500 h-1 rounded-full" style={{ width: '0%' }}></div>
+        <div className="max-w-5xl mx-auto">
+          {data.audioUrl ? (
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Playback
+              </div>
+              <audio
+                key={data.audioUrl}
+                controls
+                preload="metadata"
+                className="w-full"
+                src={data.audioUrl}
+              >
+                Your browser does not support audio playback.
+              </audio>
             </div>
-            <span className="text-sm text-gray-600 min-w-[5rem]">0:00 / {data.duration || '0:00'}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Bookmark">
-              <span className="text-gray-600">📌</span>
-            </button>
-            <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Comment">
-              <span className="text-gray-600">💬</span>
-            </button>
-            <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Screenshot">
-              <span className="text-gray-600">📸</span>
-            </button>
-          </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+              No saved audio is attached to this transcript.
+            </div>
+          )}
         </div>
       </div>
 

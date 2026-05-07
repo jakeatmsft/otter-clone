@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { buildUploadedAudioUrl, saveTranscriptRecord } from '@/lib/transcript-store';
 
 export async function GET() {
   try {
@@ -26,6 +27,7 @@ export async function GET() {
         summary: data.summary || data.transcript?.slice(0, 200) || '',
         createdAt: data.createdAt || new Date().toISOString(),
         duration: data.duration || '0 min',
+        audioUrl: buildUploadedAudioUrl(data.audioFilename),
         speakers: data.speakers || [],
         participants: data.speakers?.length || 0,
         comments: data.comments || 0,
@@ -42,5 +44,37 @@ export async function GET() {
   } catch (error) {
     console.error('Error reading transcripts:', error);
     return NextResponse.json({ transcripts: [] });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const { audioFilename, duration, segments, speakers, summary, title, transcript } =
+      await request.json();
+
+    if (!transcript || !String(transcript).trim()) {
+      return NextResponse.json(
+        { error: 'No transcript provided' },
+        { status: 400 }
+      );
+    }
+
+    const saved = await saveTranscriptRecord({
+      audioFilename,
+      duration,
+      segments,
+      speakers,
+      summary,
+      title,
+      transcript: String(transcript).trim(),
+    });
+
+    return NextResponse.json({ id: saved.id, summary: saved.summary });
+  } catch (error) {
+    console.error('Error saving transcript:', error);
+    return NextResponse.json(
+      { error: 'Failed to save transcript' },
+      { status: 500 }
+    );
   }
 }

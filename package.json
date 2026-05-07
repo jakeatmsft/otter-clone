@@ -3,30 +3,31 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node server.js --dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node server.js",
     "symphony": "node symphony/cli.js",
     "test:symphony": "node --test symphony/test/*.test.js"
   },
   "dependencies": {
+    "@azure/identity": "^4.13.0",
+    "formidable": "^3.5.2",
     "liquidjs": "^10.24.0",
     "next": "^15.1.6",
+    "openai": "^4.77.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "openai": "^4.77.0",
-    "@anthropic-ai/sdk": "^0.32.1",
-    "formidable": "^3.5.2",
+    "ws": "^8.20.0",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
+    "@types/formidable": "^3.4.5",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/formidable": "^3.4.5",
-    "typescript": "^5",
-    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.4.17",
     "postcss": "^8.4.35",
-    "autoprefixer": "^10.4.17"
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
   }
 }

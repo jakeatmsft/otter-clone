@@ -4,7 +4,7 @@ import { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import RightPanel from '../components/layout/RightPanel';
 
-type WhisperSegment = {
+type TranscriptSegment = {
   start?: number;
   end?: number;
   text?: string;
@@ -94,7 +94,7 @@ export default function UploadPage() {
       setPreviewTranscript(transcript.slice(0, 500));
 
       const rawSegments = Array.isArray(transcribeData.segments)
-        ? (transcribeData.segments as WhisperSegment[])
+        ? (transcribeData.segments as TranscriptSegment[])
         : [];
 
       const segments = rawSegments.map((segment) => ({
@@ -103,24 +103,28 @@ export default function UploadPage() {
         text: segment.text || '',
       }));
 
-      const durationSeconds = Math.max(
-        1,
-        Math.round(
-          rawSegments.reduce(
-            (max, segment) => Math.max(max, segment.end || segment.start || 0),
-            0
-          )
+      const derivedDurationSeconds = Math.round(
+        rawSegments.reduce(
+          (max, segment) => Math.max(max, segment.end || segment.start || 0),
+          0
         )
       );
+      const durationSeconds =
+        typeof transcribeData.durationSeconds === 'number'
+          ? Math.max(1, Math.round(transcribeData.durationSeconds))
+          : derivedDurationSeconds > 0
+            ? Math.max(1, derivedDurationSeconds)
+            : null;
 
       setStatusMessage('Generating summary and saving transcript...');
       const summarizeResponse = await fetch('/api/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          audioFilename: uploadData.filename,
           title: title.trim() || defaultTitleFromFile(file.name),
           transcript,
-          duration: formatHumanDuration(durationSeconds),
+          duration: durationSeconds ? formatHumanDuration(durationSeconds) : 'Unknown duration',
           speakers: [{ name: 'Speaker 1', percentage: 100 }],
           segments,
         }),

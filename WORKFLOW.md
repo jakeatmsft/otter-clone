@@ -4,13 +4,14 @@ tracker:
   api_key: $GITHUB_TOKEN
   # Use the repo owner for repository-scoped projects. Remove `project_repository`
   # below if your project is user-scoped instead.
-  project_owner: yuki-leong-1
+  project_owner: jakeatmsft
   project_repository: otter-clone
   # Replace this with the GitHub Project number for this repo.
-  project_number: replace-with-github-project-number
+  project_number: 1
   status_field_name: Status
   priority_field_name: Priority
   active_states:
+    - Backlog
     - Todo
     - In Progress
   terminal_states:

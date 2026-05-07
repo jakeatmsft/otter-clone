@@ -1,24 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-import { writeFile } from 'fs/promises';
-import { join } from 'path';
-import fs from 'fs';
+import {
+  createAzureSummarizationClient,
+  getAzureSummarizationModel,
+  getAzureSummarizationScope,
+  normalizeAzureCredentialError,
+} from '@/lib/azure-openai';
+import { saveTranscriptRecord } from '@/lib/transcript-store';
 
 export async function POST(request: NextRequest) {
   try {
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicKey || /your_anthropic_api_key_here/i.test(anthropicKey)) {
-      return NextResponse.json(
-        {
-          error:
-            'ANTHROPIC_API_KEY is missing or invalid. Update .env.local with a real key and restart the server.',
-        },
-        { status: 500 }
-      );
-    }
+    const { audioFilename, transcript, title, duration, speakers, segments } =
+      await request.json();
 
-    const { transcript, title, duration, speakers, segments } = await request.json();
-    
     if (!transcript) {
       return NextResponse.json(
         { error: 'No transcript provided' },
@@ -26,14 +19,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate summary with Claude
-    const anthropic = new Anthropic({ apiKey: anthropicKey });
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: `Analyze this transcript and provide:
+    const openai = await createAzureSummarizationClient();
+    const model = getAzureSummarizationModel();
+    const prompt = `Analyze this transcript and provide:
 
 1. **Summary** (2-3 sentences)
 2. **Key Points** (bullet list)
@@ -43,40 +31,38 @@ export async function POST(request: NextRequest) {
 Transcript:
 ${transcript}
 
-Format your response clearly with headers.`
-      }],
+Format your response clearly with headers.`;
+    const response = await openai.responses.create({
+      model,
+      max_output_tokens: 500,
+      input: prompt,
     });
 
-    const summary = message.content[0].type === 'text' 
-      ? message.content[0].text 
-      : '';
+    const summary = response.output_text.trim();
 
-    // Save transcript + summary
-    const id = Date.now().toString();
-    const data = {
-      id,
-      title: typeof title === 'string' && title.trim() ? title.trim() : 'Untitled',
-      transcript,
-      summary,
-      duration: typeof duration === 'string' && duration.trim() ? duration : '0 min',
-      speakers: Array.isArray(speakers) ? speakers : [],
-      segments: Array.isArray(segments) ? segments : [],
-      createdAt: new Date().toISOString(),
-    };
-
-    const dataDir = join(process.cwd(), 'data', 'transcripts');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+    if (!summary) {
+      throw new Error('Azure OpenAI returned an empty summary.');
     }
 
-    const filepath = join(dataDir, `${id}.json`);
-    await writeFile(filepath, JSON.stringify(data, null, 2));
+    const saved = await saveTranscriptRecord({
+      audioFilename,
+      duration,
+      segments,
+      speakers,
+      summary,
+      title,
+      transcript,
+    });
 
-    return NextResponse.json({ summary, id });
+    return NextResponse.json({ summary, id: saved.id });
   } catch (error) {
+    const message = normalizeAzureCredentialError(error, {
+      scope: getAzureSummarizationScope(),
+      surface: 'summarization',
+    });
     console.error('Summarization error:', error);
     return NextResponse.json(
-      { error: 'Summarization failed: ' + (error as Error).message },
+      { error: 'Summarization failed: ' + message },
       { status: 500 }
     );
   }

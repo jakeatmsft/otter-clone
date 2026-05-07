@@ -4,8 +4,12 @@ import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 
 export const metadata: Metadata = {
-  title: "Otter Clone - AI Transcription",
+  title: "seaotter",
   description: "Transcribe audio files with AI-powered summaries",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

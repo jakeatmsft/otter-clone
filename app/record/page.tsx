@@ -2,12 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createDefaultTranscriptTitle } from '@/lib/transcript-title';
 import RightPanel from '../components/layout/RightPanel';
 
-const RECORDER_MIME_CANDIDATES = [
+const TARGET_SAMPLE_RATE = 24000;
+const SCRIPT_PROCESSOR_BUFFER_SIZE = 4096;
+const MEDIA_RECORDER_TIMESLICE_MS = 1000;
+const REALTIME_FINALIZATION_TIMEOUT_MS = 4000;
+const RECORDING_MIME_TYPE_CANDIDATES = [
   'audio/webm;codecs=opus',
   'audio/webm',
   'audio/mp4',
+  'audio/ogg;codecs=opus',
 ];
 
 function formatClockDuration(totalSeconds: number) {
@@ -20,17 +26,75 @@ function formatHumanDuration(totalSeconds: number) {
   if (totalSeconds < 60) {
     return `${Math.max(1, totalSeconds)} sec`;
   }
+
   const mins = Math.floor(totalSeconds / 60);
   return `${mins} min`;
 }
 
-function getPreferredMimeType() {
-  for (const candidate of RECORDER_MIME_CANDIDATES) {
-    if (MediaRecorder.isTypeSupported(candidate)) {
-      return candidate;
-    }
+function sanitizeFilenamePart(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return normalized || 'recording';
+}
+
+function getPreferredRecordingMimeType() {
+  if (
+    typeof MediaRecorder === 'undefined' ||
+    typeof MediaRecorder.isTypeSupported !== 'function'
+  ) {
+    return '';
   }
-  return '';
+
+  return (
+    RECORDING_MIME_TYPE_CANDIDATES.find((mimeType) =>
+      MediaRecorder.isTypeSupported(mimeType)
+    ) || ''
+  );
+}
+
+function getRecordingFileExtension(mimeType: string) {
+  const normalized = mimeType.split(';', 1)[0]?.trim().toLowerCase() || '';
+
+  if (normalized === 'audio/mp4') {
+    return 'm4a';
+  }
+
+  if (normalized === 'audio/ogg') {
+    return 'ogg';
+  }
+
+  return 'webm';
+}
+
+function waitForValueOrTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallbackValue: T
+) {
+  return new Promise<T>((resolve) => {
+    const timeout = setTimeout(() => {
+      resolve(fallbackValue);
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      })
+      .catch(() => {
+        clearTimeout(timeout);
+        resolve(fallbackValue);
+      });
+  });
+}
+
+function getRealtimeSocketUrl() {
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${protocol}://${window.location.host}/api/realtime-transcription`;
 }
 
 function normalizeError(error: unknown) {
@@ -54,13 +118,79 @@ function normalizeError(error: unknown) {
   return 'An unexpected audio capture error occurred.';
 }
 
-type WhisperSegment = {
+function encodePcm16Chunk(float32Samples: Float32Array, inputRate: number) {
+  if (inputRate <= 0) {
+    return '';
+  }
+
+  const sampleRateRatio = inputRate / TARGET_SAMPLE_RATE;
+  const outputLength = Math.max(1, Math.round(float32Samples.length / sampleRateRatio));
+  const pcm16 = new Int16Array(outputLength);
+  let inputOffset = 0;
+
+  for (let outputOffset = 0; outputOffset < outputLength; outputOffset += 1) {
+    const nextInputOffset = Math.min(
+      float32Samples.length,
+      Math.round((outputOffset + 1) * sampleRateRatio)
+    );
+
+    let total = 0;
+    let count = 0;
+
+    for (let i = inputOffset; i < nextInputOffset; i += 1) {
+      total += float32Samples[i];
+      count += 1;
+    }
+
+    const sample = count > 0 ? total / count : 0;
+    const clamped = Math.max(-1, Math.min(1, sample));
+    pcm16[outputOffset] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+    inputOffset = nextInputOffset;
+  }
+
+  let binary = '';
+  const bytes = new Uint8Array(pcm16.buffer);
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+
+  return window.btoa(binary);
+}
+
+type RealtimeFinalization = {
+  reject: (error: Error) => void;
+  resolve: (transcript: string) => void;
+};
+
+type RecordedAudio = {
+  blob: Blob;
+  extension: string;
+  mimeType: string;
+};
+
+type RawTranscriptSegment = {
+  end?: number;
   start?: number;
   text?: string;
 };
 
+type SavedTranscriptSegment = {
+  speaker: string;
+  timestamp: string;
+  text: string;
+};
+
+type RealtimeServerMessage =
+  | { type: 'error'; error?: string }
+  | { type: 'session.finalized'; fullTranscript?: string }
+  | { type: 'session.ready' }
+  | { type: 'speech.started' }
+  | { type: 'speech.stopped' }
+  | { type: 'transcript.updated'; fullTranscript?: string; isFinal?: boolean };
+
 export default function RecordPage() {
   const router = useRouter();
+  const initialDefaultTitle = useRef(createDefaultTranscriptTitle());
 
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -70,24 +200,150 @@ export default function RecordPage() {
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
   const [selectedInputId, setSelectedInputId] = useState('');
   const [includeLoopback, setIncludeLoopback] = useState(false);
-  const [noteTitle, setNoteTitle] = useState('Untitled recording');
+  const [noteTitle, setNoteTitle] = useState(initialDefaultTitle.current);
   const [statusMessage, setStatusMessage] = useState('Ready to record');
   const [errorMessage, setErrorMessage] = useState('');
   const [previewTranscript, setPreviewTranscript] = useState('');
-  const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
 
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const displayStreamRef = useRef<MediaStream | null>(null);
-  const mixedStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const displayStreamRef = useRef<MediaStream | null>(null);
   const durationRef = useRef(0);
+  const finalizationRef = useRef<RealtimeFinalization | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const recordingMimeTypeRef = useRef('');
+  const silentGainRef = useRef<GainNode | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+  const transcriptRef = useRef('');
+  const streamingAudioRef = useRef(false);
+  const autoTitleRef = useRef(initialDefaultTitle.current);
 
   const selectedDeviceLabel = useMemo(() => {
     const current = audioInputs.find((device) => device.deviceId === selectedInputId);
     return current?.label || 'Default microphone';
   }, [audioInputs, selectedInputId]);
+
+  const buildRecordedAudio = useCallback((mimeTypeHint?: string) => {
+    const chunks = recordedChunksRef.current;
+    recordedChunksRef.current = [];
+
+    if (!chunks.length) {
+      throw new Error('Recorded audio was empty.');
+    }
+
+    const mimeType = mimeTypeHint || recordingMimeTypeRef.current || chunks[0]?.type || 'audio/webm';
+    recordingMimeTypeRef.current = '';
+
+    const blob = new Blob(chunks, { type: mimeType });
+    if (!blob.size) {
+      throw new Error('Recorded audio was empty.');
+    }
+
+    const resolvedMimeType = blob.type || mimeType || 'audio/webm';
+
+    return {
+      blob,
+      extension: getRecordingFileExtension(resolvedMimeType),
+      mimeType: resolvedMimeType,
+    };
+  }, []);
+
+  const discardLocalRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    recordedChunksRef.current = [];
+    recordingMimeTypeRef.current = '';
+
+    if (!recorder || recorder.state === 'inactive') {
+      return;
+    }
+
+    recorder.ondataavailable = null;
+    try {
+      recorder.stop();
+    } catch {
+      // Ignore teardown errors while discarding a partial recording.
+    }
+  }, []);
+
+  const finalizeLocalRecording = useCallback(() => {
+    return new Promise<RecordedAudio>((resolve, reject) => {
+      const recorder = mediaRecorderRef.current;
+
+      if (!recorder) {
+        try {
+          resolve(buildRecordedAudio());
+        } catch (error) {
+          reject(
+            error instanceof Error
+              ? error
+              : new Error('Failed to finalize the local audio recording.')
+          );
+        }
+        return;
+      }
+
+      const handleStop = () => {
+        cleanupRecorderListeners();
+        mediaRecorderRef.current = null;
+
+        try {
+          resolve(buildRecordedAudio(recorder.mimeType));
+        } catch (error) {
+          reject(
+            error instanceof Error
+              ? error
+              : new Error('Failed to finalize the local audio recording.')
+          );
+        }
+      };
+
+      const handleError = () => {
+        cleanupRecorderListeners();
+        mediaRecorderRef.current = null;
+        reject(new Error('Failed to finalize the local audio recording.'));
+      };
+
+      const cleanupRecorderListeners = () => {
+        recorder.removeEventListener('stop', handleStop);
+        recorder.removeEventListener('error', handleError);
+      };
+
+      recorder.addEventListener('stop', handleStop, { once: true });
+      recorder.addEventListener('error', handleError, { once: true });
+
+      if (recorder.state === 'inactive') {
+        handleStop();
+        return;
+      }
+
+      try {
+        recorder.stop();
+      } catch (error) {
+        cleanupRecorderListeners();
+        reject(
+          error instanceof Error
+            ? error
+            : new Error('Failed to stop the local audio recording.')
+        );
+      }
+    });
+  }, [buildRecordedAudio]);
+
+  const cleanupRealtimeSocket = useCallback(() => {
+    const socket = socketRef.current;
+    socketRef.current = null;
+    streamingAudioRef.current = false;
+
+    if (
+      socket &&
+      (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
+    ) {
+      socket.close();
+    }
+  }, []);
 
   const refreshAudioInputs = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) {
@@ -117,18 +373,20 @@ export default function RecordPage() {
       if (!stream) {
         return;
       }
+
       stream.getTracks().forEach((track) => track.stop());
     };
 
     stopTracks(micStreamRef.current);
     stopTracks(displayStreamRef.current);
-    stopTracks(mixedStreamRef.current);
 
     micStreamRef.current = null;
     displayStreamRef.current = null;
-    mixedStreamRef.current = null;
-    recorderRef.current = null;
-    chunksRef.current = [];
+
+    processorRef.current?.disconnect();
+    silentGainRef.current?.disconnect();
+    processorRef.current = null;
+    silentGainRef.current = null;
 
     if (audioContextRef.current) {
       await audioContextRef.current.close().catch(() => undefined);
@@ -136,21 +394,19 @@ export default function RecordPage() {
     }
   }, []);
 
-  const processRecording = useCallback(
-    async (audioBlob: Blob, durationSeconds: number) => {
-      setIsProcessing(true);
-      setStatusMessage('Uploading recording...');
-      setErrorMessage('');
+  const waitForFinalTranscript = useCallback(() => {
+    return new Promise<string>((resolve, reject) => {
+      finalizationRef.current = { resolve, reject };
+    });
+  }, []);
 
-      const extension = audioBlob.type.includes('mp4') ? 'm4a' : 'webm';
-      const recordingFile = new File(
-        [audioBlob],
-        `recording-${Date.now()}.${extension}`,
-        { type: audioBlob.type || 'audio/webm' }
-      );
-
+  const uploadRecordedAudio = useCallback(
+    async (recordedAudio: RecordedAudio) => {
+      setStatusMessage('Uploading full recording...');
+      const title = noteTitle.trim() || autoTitleRef.current;
+      const filename = `${sanitizeFilenamePart(title)}.${recordedAudio.extension}`;
       const uploadForm = new FormData();
-      uploadForm.append('file', recordingFile);
+      uploadForm.append('file', recordedAudio.blob, filename);
 
       const uploadResponse = await fetch('/api/upload', {
         method: 'POST',
@@ -159,67 +415,208 @@ export default function RecordPage() {
       const uploadData = await uploadResponse.json();
 
       if (!uploadResponse.ok || !uploadData.filename) {
-        throw new Error(uploadData.error || 'Upload failed.');
+        throw new Error(uploadData.error || 'Failed to upload the recorded audio.');
       }
 
-      setStatusMessage('Transcribing audio...');
-      const transcribeResponse = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: uploadData.filename }),
-      });
-      const transcribeData = await transcribeResponse.json();
+      return String(uploadData.filename);
+    },
+    [noteTitle]
+  );
 
-      if (!transcribeResponse.ok) {
-        throw new Error(transcribeData.error || 'Transcription failed.');
-      }
+  const transcribeUploadedAudio = useCallback(async (audioFilename: string) => {
+    setStatusMessage('Transcribing full recording...');
+    const transcribeResponse = await fetch('/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: audioFilename }),
+    });
+    const transcribeData = await transcribeResponse.json();
 
-      const transcript = String(transcribeData.transcript || '').trim();
-      if (!transcript) {
-        throw new Error('No transcription text was returned.');
-      }
+    if (!transcribeResponse.ok) {
+      throw new Error(transcribeData.error || 'Transcription failed.');
+    }
 
-      setPreviewTranscript(transcript.slice(0, 320));
+    const transcript = String(transcribeData.transcript || '').trim();
+    const rawSegments = Array.isArray(transcribeData.segments)
+      ? (transcribeData.segments as RawTranscriptSegment[])
+      : [];
 
-      const segments = Array.isArray(transcribeData.segments)
-        ? (transcribeData.segments as WhisperSegment[]).map((segment) => ({
-            speaker: 'Speaker 1',
-            timestamp: formatClockDuration(Math.round(segment.start || 0)),
-            text: segment.text || '',
-          }))
-        : [];
+    const segments: SavedTranscriptSegment[] = rawSegments.map((segment) => ({
+      speaker: 'Speaker 1',
+      timestamp: formatClockDuration(Math.round(segment.start || 0)),
+      text: segment.text || '',
+    }));
 
-      setStatusMessage('Generating summary and saving transcript...');
-      const summarizeResponse = await fetch('/api/summarize', {
+    const derivedDurationSeconds = Math.round(
+      rawSegments.reduce(
+        (max, segment) => Math.max(max, segment.end || segment.start || 0),
+        0
+      )
+    );
+
+    return {
+      durationSeconds:
+        typeof transcribeData.durationSeconds === 'number'
+          ? Math.max(1, Math.round(transcribeData.durationSeconds))
+          : derivedDurationSeconds > 0
+            ? Math.max(1, derivedDurationSeconds)
+            : undefined,
+      segments,
+      transcript,
+    };
+  }, []);
+
+  const saveTranscriptWithAudio = useCallback(
+    async ({
+      audioFilename,
+      durationSeconds,
+      segments,
+      transcript,
+    }: {
+      audioFilename: string;
+      durationSeconds: number;
+      segments: SavedTranscriptSegment[];
+      transcript: string;
+    }) => {
+      setStatusMessage('Saving transcript and audio...');
+      const title = noteTitle.trim() || createDefaultTranscriptTitle();
+
+      const saveResponse = await fetch('/api/transcripts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: noteTitle.trim() || 'Untitled recording',
+          audioFilename,
+          title,
           transcript,
           duration: formatHumanDuration(durationSeconds),
           speakers: [{ name: 'Speaker 1', percentage: 100 }],
           segments,
         }),
       });
-      const summarizeData = await summarizeResponse.json();
+      const saveData = await saveResponse.json();
 
-      if (!summarizeResponse.ok || !summarizeData.id) {
-        throw new Error(summarizeData.error || 'Failed to save transcript.');
+      if (!saveResponse.ok || !saveData.id) {
+        throw new Error(saveData.error || 'Failed to save transcript.');
       }
 
       setStatusMessage('Saved. Opening transcript...');
-      router.push(`/transcripts/${summarizeData.id}`);
+      router.push(`/transcripts/${saveData.id}`);
     },
     [noteTitle, router]
   );
 
+  const openRealtimeSocket = useCallback(() => {
+    return new Promise<WebSocket>((resolve, reject) => {
+      const socket = new WebSocket(getRealtimeSocketUrl());
+      let readyResolved = false;
+
+      socket.addEventListener('message', (event) => {
+        let message: RealtimeServerMessage;
+
+        try {
+          message = JSON.parse(event.data);
+        } catch (error) {
+          const parseError = new Error('Received malformed realtime transcription data.');
+          if (!readyResolved) {
+            reject(parseError);
+          }
+          setErrorMessage(parseError.message);
+          return;
+        }
+
+        if (message.type === 'session.ready') {
+          readyResolved = true;
+          setStatusMessage(
+            includeLoopback
+              ? 'Recording microphone and loopback audio with live transcription.'
+              : 'Recording microphone audio with live transcription.'
+          );
+          resolve(socket);
+          return;
+        }
+
+        if (message.type === 'speech.started') {
+          setStatusMessage('Listening... speech detected.');
+          return;
+        }
+
+        if (message.type === 'speech.stopped') {
+          setStatusMessage('Waiting for the next phrase...');
+          return;
+        }
+
+        if (message.type === 'transcript.updated') {
+          const transcript = typeof message.fullTranscript === 'string' ? message.fullTranscript : '';
+          transcriptRef.current = transcript;
+          setPreviewTranscript(transcript);
+          return;
+        }
+
+        if (message.type === 'session.finalized') {
+          const transcript =
+            typeof message.fullTranscript === 'string'
+              ? message.fullTranscript.trim()
+              : transcriptRef.current.trim();
+          const pending = finalizationRef.current;
+          finalizationRef.current = null;
+          pending?.resolve(transcript);
+          return;
+        }
+
+        if (message.type === 'error') {
+          const realtimeError = new Error(message.error || 'Realtime transcription failed.');
+          if (!readyResolved) {
+            reject(realtimeError);
+          }
+          const pending = finalizationRef.current;
+          finalizationRef.current = null;
+          pending?.reject(realtimeError);
+          setStatusMessage('Realtime transcription failed.');
+          setErrorMessage(realtimeError.message);
+        }
+      });
+
+      socket.addEventListener('close', () => {
+        if (socketRef.current === socket) {
+          socketRef.current = null;
+        }
+
+        const pending = finalizationRef.current;
+        if (pending) {
+          finalizationRef.current = null;
+          pending.reject(
+            new Error('Realtime transcription connection closed before the transcript was finalized.')
+          );
+        } else if (!readyResolved) {
+          reject(
+            new Error('Realtime transcription connection closed before it became ready.')
+          );
+        }
+      });
+
+      socket.addEventListener('error', () => {
+        const connectionError = new Error('Failed to connect to the realtime transcription service.');
+        if (!readyResolved) {
+          reject(connectionError);
+        }
+        const pending = finalizationRef.current;
+        finalizationRef.current = null;
+        pending?.reject(connectionError);
+        setStatusMessage('Realtime transcription failed.');
+        setErrorMessage(connectionError.message);
+      });
+    });
+  }, [includeLoopback]);
+
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
+
     if (isRecording && !isPaused) {
       interval = setInterval(() => {
         setDuration((prev) => prev + 1);
       }, 1000);
     }
+
     return () => {
       if (interval) {
         clearInterval(interval);
@@ -246,12 +643,14 @@ export default function RecordPage() {
 
     return () => {
       navigator.mediaDevices?.removeEventListener('devicechange', handleDeviceChange);
+      cleanupRealtimeSocket();
+      discardLocalRecording();
       cleanupMedia().catch(() => undefined);
-      if (recordingUrl) {
-        URL.revokeObjectURL(recordingUrl);
-      }
+      const pending = finalizationRef.current;
+      finalizationRef.current = null;
+      pending?.reject(new Error('Realtime transcription session was interrupted.'));
     };
-  }, [cleanupMedia, refreshAudioInputs, recordingUrl]);
+  }, [cleanupMedia, cleanupRealtimeSocket, discardLocalRecording, refreshAudioInputs]);
 
   const handleStart = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -259,10 +658,23 @@ export default function RecordPage() {
       return;
     }
 
+    if (typeof MediaRecorder === 'undefined') {
+      setErrorMessage('This browser does not support local audio recording.');
+      return;
+    }
+
+    if (!noteTitle.trim() || noteTitle === autoTitleRef.current) {
+      const nextAutoTitle = createDefaultTranscriptTitle();
+      autoTitleRef.current = nextAutoTitle;
+      setNoteTitle(nextAutoTitle);
+    }
+
     setErrorMessage('');
     setPreviewTranscript('');
+    setDuration(0);
     setIsPreparing(true);
     setStatusMessage('Requesting microphone access...');
+    transcriptRef.current = '';
 
     try {
       const micConstraints: MediaTrackConstraints = {
@@ -270,6 +682,7 @@ export default function RecordPage() {
         noiseSuppression: true,
         autoGainControl: true,
       };
+
       if (selectedInputId && selectedInputId !== 'default') {
         micConstraints.deviceId = { exact: selectedInputId };
       }
@@ -305,15 +718,13 @@ export default function RecordPage() {
           );
         }
 
-        // Video is required by getDisplayMedia in most browsers, but we only need audio.
         displayStream.getVideoTracks().forEach((track) => track.stop());
         loopbackAudioStream = new MediaStream(displayAudioTracks);
       }
 
       const BrowserAudioContext =
         window.AudioContext ||
-        (window as Window & { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext;
+        (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 
       if (!BrowserAudioContext) {
         throw new Error('AudioContext is not available in this browser.');
@@ -321,82 +732,95 @@ export default function RecordPage() {
 
       const audioContext = new BrowserAudioContext();
       audioContextRef.current = audioContext;
-      const destination = audioContext.createMediaStreamDestination();
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
+      const mixBus = audioContext.createGain();
+      const recordingDestination = audioContext.createMediaStreamDestination();
+      const processor = audioContext.createScriptProcessor(
+        SCRIPT_PROCESSOR_BUFFER_SIZE,
+        1,
+        1
+      );
+      const silentGain = audioContext.createGain();
+      silentGain.gain.value = 0;
 
       const micSource = audioContext.createMediaStreamSource(micStream);
       const micGain = audioContext.createGain();
       micGain.gain.value = 1;
-      micSource.connect(micGain).connect(destination);
+      micSource.connect(micGain).connect(mixBus);
 
       if (loopbackAudioStream) {
         const loopbackSource = audioContext.createMediaStreamSource(loopbackAudioStream);
         const loopbackGain = audioContext.createGain();
         loopbackGain.gain.value = 1;
-        loopbackSource.connect(loopbackGain).connect(destination);
+        loopbackSource.connect(loopbackGain).connect(mixBus);
       }
 
-      mixedStreamRef.current = destination.stream;
-      const mimeType = getPreferredMimeType();
-      const recorder = mimeType
-        ? new MediaRecorder(destination.stream, { mimeType })
-        : new MediaRecorder(destination.stream);
+      mixBus.connect(recordingDestination);
 
-      recorderRef.current = recorder;
-      chunksRef.current = [];
+      const preferredMimeType = getPreferredRecordingMimeType();
+      const mediaRecorder = preferredMimeType
+        ? new MediaRecorder(recordingDestination.stream, {
+            mimeType: preferredMimeType,
+          })
+        : new MediaRecorder(recordingDestination.stream);
 
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data);
+      recordedChunksRef.current = [];
+      recordingMimeTypeRef.current =
+        mediaRecorder.mimeType || preferredMimeType || 'audio/webm';
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
         }
       };
+      mediaRecorder.start(MEDIA_RECORDER_TIMESLICE_MS);
+      mediaRecorderRef.current = mediaRecorder;
 
-      recorder.onstop = () => {
-        const outputType = recorder.mimeType || mimeType || 'audio/webm';
-        const audioBlob = new Blob(chunksRef.current, { type: outputType });
-        const currentDuration = durationRef.current;
-        chunksRef.current = [];
+      setStatusMessage('Connecting realtime transcription...');
+      const socket = await openRealtimeSocket();
+      socketRef.current = socket;
 
-        cleanupMedia().catch(() => undefined);
-
-        if (audioBlob.size === 0) {
-          setStatusMessage('Recording finished, but no audio was captured.');
-          setErrorMessage('No audio data was produced. Check microphone permissions.');
-          setIsProcessing(false);
+      processor.onaudioprocess = (event) => {
+        if (!streamingAudioRef.current) {
           return;
         }
 
-        setRecordingUrl((previousUrl) => {
-          if (previousUrl) {
-            URL.revokeObjectURL(previousUrl);
-          }
-          return URL.createObjectURL(audioBlob);
-        });
+        const activeSocket = socketRef.current;
+        if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) {
+          return;
+        }
 
-        processRecording(audioBlob, currentDuration)
-          .catch((error) => {
-            setStatusMessage('Recording saved locally, but processing failed.');
-            setErrorMessage(normalizeError(error));
+        const audioChunk = encodePcm16Chunk(
+          event.inputBuffer.getChannelData(0),
+          audioContext.sampleRate
+        );
+
+        if (!audioChunk) {
+          return;
+        }
+
+        activeSocket.send(
+          JSON.stringify({
+            type: 'audio.append',
+            audio: audioChunk,
           })
-          .finally(() => {
-            setIsProcessing(false);
-          });
+        );
       };
 
-      recorder.onerror = () => {
-        setErrorMessage('Recording failed unexpectedly.');
-        setStatusMessage('Recording error. Please retry.');
-      };
+      mixBus.connect(processor);
+      processor.connect(silentGain);
+      silentGain.connect(audioContext.destination);
 
-      setDuration(0);
+      processorRef.current = processor;
+      silentGainRef.current = silentGain;
+      streamingAudioRef.current = true;
       setIsPaused(false);
       setIsRecording(true);
-      setStatusMessage(
-        includeLoopback
-          ? 'Recording microphone + output loopback audio.'
-          : 'Recording microphone audio.'
-      );
-      recorder.start(1000);
     } catch (error) {
+      cleanupRealtimeSocket();
+      discardLocalRecording();
       await cleanupMedia();
       setIsRecording(false);
       setIsPaused(false);
@@ -406,43 +830,138 @@ export default function RecordPage() {
     } finally {
       setIsPreparing(false);
     }
-  }, [cleanupMedia, includeLoopback, processRecording, refreshAudioInputs, selectedInputId]);
+  }, [
+    cleanupMedia,
+    cleanupRealtimeSocket,
+    discardLocalRecording,
+    includeLoopback,
+    noteTitle,
+    openRealtimeSocket,
+    refreshAudioInputs,
+    selectedInputId,
+  ]);
 
   const handlePause = useCallback(() => {
-    const recorder = recorderRef.current;
-    if (!recorder) {
+    if (!isRecording) {
       return;
     }
 
-    if (recorder.state === 'recording') {
-      recorder.pause();
-      setIsPaused(true);
-      setStatusMessage('Recording paused.');
-      return;
-    }
-
-    if (recorder.state === 'paused') {
-      recorder.resume();
+    if (isPaused) {
+      const recorder = mediaRecorderRef.current;
+      if (recorder?.state === 'paused') {
+        recorder.resume();
+      }
+      streamingAudioRef.current = true;
       setIsPaused(false);
       setStatusMessage('Recording resumed.');
-    }
-  }, []);
-
-  const handleStop = useCallback(() => {
-    const recorder = recorderRef.current;
-    if (!recorder || recorder.state === 'inactive') {
       return;
     }
 
-    setStatusMessage('Finalizing recording...');
+    const recorder = mediaRecorderRef.current;
+    if (recorder?.state === 'recording') {
+      recorder.pause();
+    }
+    streamingAudioRef.current = false;
+    setIsPaused(true);
+    setStatusMessage('Recording paused.');
+  }, [isPaused, isRecording]);
+
+  const handleStop = useCallback(async () => {
+    if (!isRecording) {
+      return;
+    }
+
+    const socket = socketRef.current;
+    const fallbackRealtimeTranscript = transcriptRef.current.trim();
+    let realtimeTranscriptPromise = Promise.resolve(fallbackRealtimeTranscript);
+
     setIsRecording(false);
     setIsPaused(false);
     setIsProcessing(true);
-    recorder.stop();
-  }, []);
+    streamingAudioRef.current = false;
+
+    try {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        realtimeTranscriptPromise = waitForFinalTranscript();
+        socket.send(JSON.stringify({ type: 'audio.stop' }));
+        setStatusMessage('Finalizing realtime preview...');
+      } else {
+        setStatusMessage('Finishing recording from the saved audio...');
+      }
+
+      const recordedAudio = await finalizeLocalRecording();
+      await cleanupMedia();
+
+      const realtimeTranscript = (
+        await waitForValueOrTimeout(
+          realtimeTranscriptPromise,
+          REALTIME_FINALIZATION_TIMEOUT_MS,
+          fallbackRealtimeTranscript
+        )
+      ).trim();
+      cleanupRealtimeSocket();
+
+      if (realtimeTranscript) {
+        transcriptRef.current = realtimeTranscript;
+        setPreviewTranscript(realtimeTranscript);
+      }
+
+      const audioFilename = await uploadRecordedAudio(recordedAudio);
+      let finalTranscript = realtimeTranscript;
+      let segments: SavedTranscriptSegment[] = [];
+      let durationSeconds = Math.max(1, durationRef.current);
+
+      try {
+        const batchTranscription = await transcribeUploadedAudio(audioFilename);
+
+        if (batchTranscription.transcript) {
+          finalTranscript = batchTranscription.transcript;
+          transcriptRef.current = batchTranscription.transcript;
+          setPreviewTranscript(batchTranscription.transcript);
+        }
+
+        segments = batchTranscription.segments;
+        if (typeof batchTranscription.durationSeconds === 'number') {
+          durationSeconds = batchTranscription.durationSeconds;
+        }
+      } catch (error) {
+        if (!finalTranscript) {
+          throw error;
+        }
+      }
+
+      if (!finalTranscript) {
+        throw new Error('No transcription text was returned from the recorded audio.');
+      }
+
+      await saveTranscriptWithAudio({
+        audioFilename,
+        durationSeconds,
+        segments,
+        transcript: finalTranscript,
+      });
+    } catch (error) {
+      discardLocalRecording();
+      await cleanupMedia();
+      cleanupRealtimeSocket();
+      setStatusMessage('Recording ended, but saving failed.');
+      setErrorMessage(normalizeError(error));
+      setIsProcessing(false);
+    }
+  }, [
+    cleanupMedia,
+    cleanupRealtimeSocket,
+    discardLocalRecording,
+    finalizeLocalRecording,
+    isRecording,
+    saveTranscriptWithAudio,
+    transcribeUploadedAudio,
+    uploadRecordedAudio,
+    waitForFinalTranscript,
+  ]);
 
   const canStart = !isRecording && !isPreparing && !isProcessing;
-  const recordingTitle = noteTitle.trim() || 'Untitled recording';
+  const recordingTitle = noteTitle.trim() || autoTitleRef.current;
 
   const displayedInputs = useMemo(
     () =>
@@ -458,9 +977,9 @@ export default function RecordPage() {
       return 'Preparing...';
     }
     if (isProcessing) {
-      return 'Processing...';
+      return 'Saving...';
     }
-    return 'Start Recording';
+    return 'Start Realtime Recording';
   })();
 
   return (
@@ -468,25 +987,26 @@ export default function RecordPage() {
       <div className="pr-80 pb-28">
         <div className="bg-white border-b border-gray-200 px-8 py-6">
           <div className="max-w-5xl">
-            <h1 className="text-3xl font-bold text-gray-900 mb-3">Record</h1>
+            <h1 className="mb-3 text-3xl font-bold text-gray-900">Record</h1>
             <div className="text-sm text-gray-600">
-              Capture microphone audio and optionally loop back your system/output audio.
+              Capture audio with a live transcript preview, then save the full recording for
+              playback.
             </div>
           </div>
         </div>
 
         <div className="px-8 py-6">
           <div className="max-w-5xl space-y-6">
-            <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <label className="block">
                   <span className="text-sm font-medium text-gray-700">Title</span>
                   <input
                     value={noteTitle}
                     onChange={(event) => setNoteTitle(event.target.value)}
                     disabled={isRecording || isProcessing}
-                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-                    placeholder="Untitled recording"
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                    placeholder={autoTitleRef.current}
                   />
                 </label>
 
@@ -497,7 +1017,7 @@ export default function RecordPage() {
                       value={selectedInputId}
                       onChange={(event) => setSelectedInputId(event.target.value)}
                       disabled={isRecording || isProcessing || isPreparing || !displayedInputs.length}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                      className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
                     >
                       {displayedInputs.length === 0 ? (
                         <option value="">No microphone detected</option>
@@ -517,7 +1037,7 @@ export default function RecordPage() {
                         });
                       }}
                       disabled={isRecording || isProcessing || isPreparing}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:bg-gray-50 disabled:text-gray-400"
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:bg-gray-50 disabled:text-gray-400"
                     >
                       Refresh
                     </button>
@@ -525,19 +1045,19 @@ export default function RecordPage() {
                 </label>
               </div>
 
-              <label className="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
                 <input
                   type="checkbox"
                   checked={includeLoopback}
                   onChange={(event) => setIncludeLoopback(event.target.checked)}
                   disabled={isRecording || isProcessing || isPreparing}
-                  className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
                 />
                 <div>
                   <div className="text-sm font-medium text-gray-900">
                     Include output loopback audio
                   </div>
-                  <div className="text-xs text-gray-600 mt-0.5">
+                  <div className="mt-0.5 text-xs text-gray-600">
                     On start, the browser will ask you to share a tab/window/screen. Enable
                     audio sharing to capture system output.
                   </div>
@@ -545,66 +1065,63 @@ export default function RecordPage() {
               </label>
 
               <div className="text-xs text-gray-500">
-                Current input: <span className="font-medium text-gray-700">{selectedDeviceLabel}</span>
+                Current input:{' '}
+                <span className="font-medium text-gray-700">{selectedDeviceLabel}</span>
               </div>
             </div>
 
             {!isRecording ? (
-              <div className="bg-white rounded-xl border border-gray-200 py-16 text-center">
-                <div className="text-5xl mb-4">Audio</div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">{recordingTitle}</h2>
-                <p className="text-gray-600 mb-8 max-w-xl mx-auto px-4">
+              <div className="rounded-xl border border-gray-200 bg-white py-16 text-center">
+                <div className="mb-4 text-5xl">Audio</div>
+                <h2 className="mb-2 text-2xl font-bold text-gray-900">{recordingTitle}</h2>
+                <p className="mx-auto mb-8 max-w-xl px-4 text-gray-600">
                   {isProcessing
-                    ? 'Processing your recording. Please wait.'
+                    ? 'Finishing the full recording and saving the final transcript.'
                     : 'Choose your input source and start recording when you are ready.'}
                 </p>
                 <button
                   onClick={handleStart}
                   disabled={!canStart || !displayedInputs.length}
-                  className="px-8 py-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-blue-300 transition-colors font-medium text-lg inline-flex items-center gap-3"
+                  className="inline-flex items-center gap-3 rounded-lg bg-blue-500 px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-blue-600 disabled:bg-blue-300"
                 >
-                  <span className="w-3 h-3 bg-red-500 rounded-full" />
+                  <span className="h-3 w-3 rounded-full bg-red-500" />
                   {startButtonLabel}
                 </button>
               </div>
             ) : (
-              <div className="bg-white rounded-xl border border-gray-200 p-8">
-                <div className="text-center text-gray-600 mb-6">
+              <div className="rounded-xl border border-gray-200 bg-white p-8">
+                <div className="mb-6 text-center text-gray-600">
                   {includeLoopback
-                    ? 'Capturing microphone and loopback output audio.'
-                    : 'Capturing microphone audio.'}
+                    ? 'Streaming microphone and loopback audio into the live transcript preview while saving the full recording.'
+                    : 'Streaming microphone audio into the live transcript preview while saving the full recording.'}
                 </div>
-                <div className="text-center text-4xl font-mono text-gray-900">
+                <div className="text-center font-mono text-4xl text-gray-900">
                   {formatClockDuration(duration)}
                 </div>
               </div>
             )}
 
-            {(statusMessage || errorMessage || previewTranscript || recordingUrl) && (
-              <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+            {(statusMessage || errorMessage || previewTranscript) && (
+              <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-5">
                 <div className="text-sm text-gray-700">
                   <span className="font-semibold">Status:</span> {statusMessage}
                 </div>
 
                 {errorMessage && (
-                  <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
                     {errorMessage}
                   </div>
                 )}
 
                 {previewTranscript && (
                   <div>
-                    <div className="text-sm font-semibold text-gray-800 mb-1">
-                      Transcript preview
+                    <div className="mb-1 text-sm font-semibold text-gray-800">
+                      Live transcript
                     </div>
-                    <p className="text-sm text-gray-700 leading-relaxed">{previewTranscript}</p>
+                    <p className="max-h-80 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
+                      {previewTranscript}
+                    </p>
                   </div>
-                )}
-
-                {recordingUrl && (
-                  <audio controls src={recordingUrl} className="w-full">
-                    Your browser does not support audio playback.
-                  </audio>
                 )}
               </div>
             )}
@@ -613,20 +1130,20 @@ export default function RecordPage() {
       </div>
 
       {isRecording && (
-        <div className="fixed bottom-0 left-60 right-0 bg-white border-t border-gray-200 px-8 py-5 z-20">
-          <div className="flex items-center gap-6 max-w-5xl mx-auto">
+        <div className="fixed bottom-0 left-60 right-0 z-20 border-t border-gray-200 bg-white px-8 py-5">
+          <div className="mx-auto flex max-w-5xl items-center gap-6">
             <button
               onClick={handlePause}
-              className="p-4 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+              className="rounded-full bg-gray-100 p-4 transition-colors hover:bg-gray-200"
               title={isPaused ? 'Resume' : 'Pause'}
             >
               {isPaused ? (
-                <svg className="w-6 h-6 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
+                <svg className="h-6 w-6 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
               ) : (
                 <svg
-                  className="w-6 h-6 text-gray-700"
+                  className="h-6 w-6 text-gray-700"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -642,20 +1159,24 @@ export default function RecordPage() {
             </button>
 
             <button
-              onClick={handleStop}
-              className="p-4 bg-red-500 hover:bg-red-600 rounded-full transition-colors"
+              onClick={() => {
+                handleStop().catch((error) => {
+                  setErrorMessage(normalizeError(error));
+                });
+              }}
+              className="rounded-full bg-red-500 p-4 transition-colors hover:bg-red-600"
               title="Stop"
             >
-              <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 24 24">
                 <rect x="6" y="6" width="12" height="12" />
               </svg>
             </button>
 
-            <div className="flex-1 flex items-center gap-4">
+            <div className="flex flex-1 items-center gap-4">
               <div className="flex items-center gap-2">
                 <span
-                  className={`w-3 h-3 rounded-full ${
-                    isPaused ? 'bg-yellow-500' : 'bg-red-500 animate-pulse'
+                  className={`h-3 w-3 rounded-full ${
+                    isPaused ? 'bg-yellow-500' : 'animate-pulse bg-red-500'
                   }`}
                 />
                 <span className="text-sm font-medium text-gray-700">
@@ -663,7 +1184,7 @@ export default function RecordPage() {
                 </span>
               </div>
 
-              <div className="flex-1 bg-gray-200 rounded-full h-2">
+              <div className="h-2 flex-1 rounded-full bg-gray-200">
                 <div
                   className={`h-2 rounded-full transition-all ${
                     isPaused ? 'bg-yellow-500' : 'bg-red-500'
@@ -672,7 +1193,7 @@ export default function RecordPage() {
                 />
               </div>
 
-              <span className="text-sm font-mono text-gray-700 min-w-[4rem]">
+              <span className="min-w-[4rem] font-mono text-sm text-gray-700">
                 {formatClockDuration(duration)}
               </span>
             </div>
