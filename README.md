@@ -65,6 +65,22 @@ A Next.js application for transcription, live recording, and Azure OpenAI-powere
 
 4. **Open http://localhost:3000**
 
+### Desktop launch on Windows
+
+If you want a one-click desktop launcher instead of opening a terminal each time:
+
+1. From Windows PowerShell in this repo, run:
+   ```powershell
+   npm run desktop:install
+   ```
+2. Double-click the `seaotter` shortcut on your desktop.
+
+The launcher will:
+- install `node_modules` the first time if needed
+- create `.env.local` from `.env.local.example` if it does not exist
+- reuse an already-running local server on port `3000`
+- otherwise start the app in a server window and open `http://localhost:3000`
+
 For production:
 ```bash
 npm run build
