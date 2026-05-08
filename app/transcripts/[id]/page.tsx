@@ -80,14 +80,18 @@ export default function TranscriptDetail() {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+    return (
+      <div className="flex h-screen items-center justify-center text-slate-600 dark:text-slate-400">
+        Loading...
+      </div>
+    );
   }
 
   if (!data) {
     return (
       <div className="flex flex-col items-center justify-center h-screen">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">Transcript not found</h1>
-        <Link href="/" className="text-blue-600 hover:text-blue-700">
+        <h1 className="mb-4 text-2xl font-bold text-slate-900 dark:text-slate-100">Transcript not found</h1>
+        <Link href="/" className="text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
           ← Back to home
         </Link>
       </div>
@@ -98,12 +102,12 @@ export default function TranscriptDetail() {
     <>
       <div className="pr-80 pb-24">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-8 py-6">
+        <div className="border-b border-slate-200 bg-white px-8 py-6 dark:border-slate-800 dark:bg-slate-900">
           <div className="max-w-5xl">
-            <h1 className="text-3xl font-bold text-gray-900 mb-3 focus:outline-none" contentEditable suppressContentEditableWarning>
+            <h1 className="mb-3 text-3xl font-bold text-slate-900 focus:outline-none dark:text-slate-100" contentEditable suppressContentEditableWarning>
               {data.title}
             </h1>
-            <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
+            <div className="mb-4 flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
               <span className="flex items-center gap-1">
                 <span>👤</span>
                 {data.speakers?.[0]?.name || 'Unknown'}
@@ -125,7 +129,7 @@ export default function TranscriptDetail() {
                 {data.duration || '0 min'}
               </span>
               <span>·</span>
-              <button className="flex items-center gap-1 text-blue-600 hover:text-blue-700">
+              <button className="flex items-center gap-1 text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
                 <span>📋</span>
                 copy summary
               </button>
@@ -142,22 +146,22 @@ export default function TranscriptDetail() {
                     ? 'Regenerate with Azure OpenAI'
                     : 'Summarize with Azure OpenAI'}
               </button>
-              <button className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors">
+              <button className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20">
                 Share
               </button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
+                <svg className="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                 </svg>
               </button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
+                <svg className="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                 </svg>
               </button>
             </div>
             {summaryError && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
                 {summaryError}
               </div>
             )}
@@ -165,7 +169,7 @@ export default function TranscriptDetail() {
         </div>
 
         {/* Tabs */}
-        <div className="bg-white border-b border-gray-200 px-8">
+        <div className="border-b border-slate-200 bg-white px-8 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between max-w-5xl">
             <div className="flex gap-6">
               <button
@@ -173,7 +177,7 @@ export default function TranscriptDetail() {
                 className={`py-4 px-1 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'summary'
                     ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
                 }`}
               >
                 Summary
@@ -183,13 +187,13 @@ export default function TranscriptDetail() {
                 className={`py-4 px-1 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'transcript'
                     ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
                 }`}
               >
                 Transcript
               </button>
             </div>
-            <select className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
               <option>Template: General</option>
               <option>Template: Meeting</option>
               <option>Template: Interview</option>
@@ -210,11 +214,11 @@ export default function TranscriptDetail() {
       </div>
 
       {/* Audio Player */}
-      <div className="fixed bottom-0 left-60 right-0 bg-white border-t border-gray-200 px-8 py-4 z-20">
+      <div className="fixed bottom-0 left-60 right-0 z-20 border-t border-slate-200 bg-white px-8 py-4 dark:border-slate-800 dark:bg-slate-900">
         <div className="max-w-5xl mx-auto">
           {data.audioUrl ? (
             <div>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Playback
               </div>
               <audio
@@ -228,7 +232,7 @@ export default function TranscriptDetail() {
               </audio>
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-400">
               No saved audio is attached to this transcript.
             </div>
           )}
@@ -247,11 +251,11 @@ function SummaryTab({ data }: { data: TranscriptData }) {
     <div className="space-y-8">
       {/* Overview */}
       <section>
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-4">
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
           <span className="text-xl">≡</span>
           Overview
         </h2>
-        <div className="bg-gray-50 rounded-lg p-6 text-gray-700 leading-relaxed whitespace-pre-wrap">
+        <div className="whitespace-pre-wrap rounded-lg bg-slate-100 p-6 leading-relaxed text-slate-700 dark:bg-slate-900 dark:text-slate-300">
           {hasSummary
             ? data.summary
             : 'No summary available yet. Generate one to get a concise bullet-point recap.'}
@@ -260,7 +264,7 @@ function SummaryTab({ data }: { data: TranscriptData }) {
 
       {/* Action Items */}
       <section>
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-4">
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
           <span className="text-xl">☑</span>
           Action Items
         </h2>
@@ -270,20 +274,20 @@ function SummaryTab({ data }: { data: TranscriptData }) {
               <div key={i} className="flex items-start gap-3 group">
                 <input
                   type="checkbox"
-                  className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900"
                 />
-                <span className="flex-1 text-gray-700">{item}</span>
-                <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-100 rounded transition-all">
-                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <span className="flex-1 text-slate-700 dark:text-slate-300">{item}</span>
+                <button className="rounded p-1 opacity-0 transition-all group-hover:opacity-100 hover:bg-slate-100 dark:hover:bg-slate-800">
+                  <svg className="w-4 h-4 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                   </svg>
                 </button>
               </div>
             ))
           ) : (
-            <p className="text-gray-500 text-sm">No action items</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">No action items</p>
           )}
-          <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+          <button className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
             + Add action item
           </button>
         </div>
@@ -291,7 +295,7 @@ function SummaryTab({ data }: { data: TranscriptData }) {
 
       {/* Outline */}
       <section>
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900 mb-4">
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
           <span className="text-xl">≡</span>
           Outline
         </h2>
@@ -299,11 +303,11 @@ function SummaryTab({ data }: { data: TranscriptData }) {
           {data.outline && data.outline.length > 0 ? (
             data.outline.map((section, i) => (
               <div key={i}>
-                <h3 className="font-semibold text-gray-900 mb-2">{section.topic}</h3>
+                <h3 className="mb-2 font-semibold text-slate-900 dark:text-slate-100">{section.topic}</h3>
                 <ul className="space-y-1.5 ml-4">
                   {section.points.map((point, j) => (
-                    <li key={j} className="text-gray-700 flex items-start gap-2">
-                      <span className="text-gray-400 mt-1.5">•</span>
+                    <li key={j} className="flex items-start gap-2 text-slate-700 dark:text-slate-300">
+                      <span className="mt-1.5 text-slate-400 dark:text-slate-500">•</span>
                       <span>{point}</span>
                     </li>
                   ))}
@@ -311,7 +315,7 @@ function SummaryTab({ data }: { data: TranscriptData }) {
               </div>
             ))
           ) : (
-            <p className="text-gray-500 text-sm">No outline available</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">No outline available</p>
           )}
         </div>
       </section>
@@ -327,8 +331,8 @@ function TranscriptTab({ data }: { data: TranscriptData }) {
       {/* Keywords */}
       {data.keywords && data.keywords.length > 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Keywords</h3>
-          <p className="text-gray-600">{data.keywords.join(', ')}</p>
+          <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Keywords</h3>
+          <p className="text-slate-600 dark:text-slate-400">{data.keywords.join(', ')}</p>
         </div>
       )}
 
@@ -336,8 +340,8 @@ function TranscriptTab({ data }: { data: TranscriptData }) {
       {data.speakers && data.speakers.length > 0 && (
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">Speakers</h3>
-            <p className="text-gray-600">
+            <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Speakers</h3>
+            <p className="text-slate-600 dark:text-slate-400">
               {data.speakers.map((s, i) => (
                 <span key={i}>
                   {s.name} ({s.percentage}%)
@@ -346,7 +350,7 @@ function TranscriptTab({ data }: { data: TranscriptData }) {
               ))}
             </p>
           </div>
-          <button className="px-4 py-2 text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-2">
+          <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
             <span>✏️</span>
             Edit Transcript
           </button>
@@ -354,7 +358,7 @@ function TranscriptTab({ data }: { data: TranscriptData }) {
       )}
 
       {/* Transcript Segments */}
-      <div className="space-y-4 border-t border-gray-200 pt-6">
+      <div className="space-y-4 border-t border-slate-200 pt-6 dark:border-slate-800">
         {data.segments && data.segments.length > 0 ? (
           data.segments.map((segment, i) => {
             const speakerIndex = parseInt(segment.speaker.replace(/\D/g, '')) - 1 || 0;
@@ -367,16 +371,16 @@ function TranscriptTab({ data }: { data: TranscriptData }) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-gray-900">{segment.speaker}</span>
-                    <span className="text-sm text-gray-500">{segment.timestamp}</span>
+                    <span className="font-medium text-slate-900 dark:text-slate-100">{segment.speaker}</span>
+                    <span className="text-sm text-slate-500 dark:text-slate-400">{segment.timestamp}</span>
                   </div>
-                  <p className="text-gray-700 leading-relaxed">{segment.text}</p>
+                  <p className="leading-relaxed text-slate-700 dark:text-slate-300">{segment.text}</p>
                 </div>
               </div>
             );
           })
         ) : (
-          <div className="text-gray-600 whitespace-pre-wrap">{data.transcript}</div>
+          <div className="whitespace-pre-wrap text-slate-600 dark:text-slate-400">{data.transcript}</div>
         )}
       </div>
     </div>

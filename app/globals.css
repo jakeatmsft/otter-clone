@@ -2,6 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-gray-50;
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    @apply bg-slate-50;
+  }
+
+  html.dark {
+    color-scheme: dark;
+    @apply bg-slate-950;
+  }
+
+  body {
+    @apply min-h-screen bg-slate-50 text-slate-900 transition-colors duration-200;
+  }
+
+  html.dark body {
+    @apply bg-slate-950 text-slate-100;
+  }
 }

@@ -16,10 +16,10 @@ export default function RightPanel({
 
   if (isCollapsed) {
     return (
-      <aside className="w-12 bg-white border-l border-gray-200 fixed right-0 top-16 bottom-0 flex items-start justify-center pt-4">
+      <aside className="fixed bottom-0 right-0 top-16 flex w-12 items-start justify-center border-l border-slate-200 bg-white pt-4 dark:border-slate-800 dark:bg-slate-900">
         <button
           onClick={() => setIsCollapsed(false)}
-          className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+          className="p-2 text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
           aria-label="Expand panel"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -31,9 +31,9 @@ export default function RightPanel({
   }
 
   return (
-    <aside className="w-80 bg-white border-l border-gray-200 fixed right-0 top-16 bottom-0 flex flex-col">
+    <aside className="fixed bottom-0 right-0 top-16 flex w-80 flex-col border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+      <div className="flex items-center justify-between border-b border-slate-200 p-4 dark:border-slate-800">
         <div className="flex gap-2">
           {tabs.map((tab) => (
             <button
@@ -41,8 +41,8 @@ export default function RightPanel({
               onClick={() => setActiveTab(tab)}
               className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
                 activeTab === tab
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'text-gray-600 hover:bg-gray-50'
+                  ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
               }`}
             >
               {tab}
@@ -51,7 +51,7 @@ export default function RightPanel({
         </div>
         <button
           onClick={() => setIsCollapsed(true)}
-          className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+          className="p-1 text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
           aria-label="Collapse panel"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -64,31 +64,31 @@ export default function RightPanel({
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'Chat' && (
           <div className="space-y-4">
-            <button className="w-full px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
+            <button className="w-full rounded-lg bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20">
               + New chat
             </button>
             <div className="relative">
               <textarea
                 placeholder="Ask anything about your conversations"
-                className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
                 rows={4}
               />
             </div>
-            <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+            <button className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200">
               Advanced →
             </button>
           </div>
         )}
 
         {activeTab === 'Comments' && (
-          <div className="text-center text-sm text-gray-500 py-8">
+          <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
             No comments yet
           </div>
         )}
 
         {activeTab === 'Outline' && (
-          <div className="text-sm text-gray-500">
-            <div className="font-semibold text-gray-900 mb-2">Outline</div>
+          <div className="text-sm text-slate-500 dark:text-slate-400">
+            <div className="mb-2 font-semibold text-slate-900 dark:text-slate-100">Outline</div>
             <p className="text-xs">Summary outline will appear here</p>
           </div>
         )}

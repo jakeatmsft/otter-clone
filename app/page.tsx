@@ -51,11 +51,11 @@ export default function Home() {
     <>
       <div className="pr-80">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-8 py-4">
+        <div className="border-b border-slate-200 bg-white px-8 py-4 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-gray-900">Conversations</h1>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Conversations</h1>
             <div className="flex items-center gap-2">
-              <select className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <select className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                 <option>For you</option>
                 <option>All conversations</option>
                 <option>Shared with me</option>
@@ -67,15 +67,15 @@ export default function Home() {
         {/* Conversations List */}
         <div className="px-8 py-6">
           {loading ? (
-            <div className="text-center py-12 text-gray-500">Loading conversations...</div>
+            <div className="py-12 text-center text-slate-500 dark:text-slate-400">Loading conversations...</div>
           ) : Object.keys(groupedTranscripts).length === 0 ? (
             <div className="text-center py-12">
               <div className="text-6xl mb-4">📝</div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">No conversations yet</h2>
-              <p className="text-gray-600 mb-6">Start by recording or importing an audio file</p>
+              <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-100">No conversations yet</h2>
+              <p className="mb-6 text-slate-600 dark:text-slate-400">Start by recording or importing an audio file</p>
               <Link
                 href="/record"
-                className="inline-block px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                className="inline-block rounded-lg bg-blue-500 px-6 py-3 font-medium text-white transition-colors hover:bg-blue-600"
               >
                 Start Recording
               </Link>
@@ -84,7 +84,7 @@ export default function Home() {
             <div className="space-y-8">
               {Object.entries(groupedTranscripts).map(([date, items]) => (
                 <div key={date}>
-                  <h2 className="text-sm font-semibold text-gray-500 mb-3">{date}</h2>
+                  <h2 className="mb-3 text-sm font-semibold text-slate-500 dark:text-slate-400">{date}</h2>
                   <div className="space-y-4">
                     {items.map((transcript) => (
                       <ConversationCard key={transcript.id} transcript={transcript} />
@@ -108,15 +108,15 @@ function ConversationCard({ transcript }: { transcript: Transcript }) {
 
   return (
     <Link href={`/transcripts/${transcript.id}`}>
-      <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-lg transition-shadow cursor-pointer">
+      <div className="cursor-pointer rounded-lg border border-slate-200 bg-white p-6 transition-all hover:shadow-lg dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:shadow-2xl dark:hover:shadow-black/20">
         {/* Header */}
         <div className="flex items-start gap-4 mb-3">
-          <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold flex-shrink-0">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-500 font-semibold text-white">
             {transcript.speakers?.[0]?.name?.[0] || 'U'}
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-bold text-gray-900 mb-1">{transcript.title}</h3>
-            <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
+            <h3 className="mb-1 text-lg font-bold text-slate-900 dark:text-slate-100">{transcript.title}</h3>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
               <span>{new Date(transcript.createdAt).toLocaleTimeString('en-US', { 
                 hour: '2-digit', 
                 minute: '2-digit' 
@@ -136,7 +136,7 @@ function ConversationCard({ transcript }: { transcript: Transcript }) {
         </div>
 
         {/* Summary Preview */}
-        <div className="text-sm text-gray-700 mb-3">
+        <div className="mb-3 text-sm text-slate-700 dark:text-slate-300">
           <p className="line-clamp-3">
             {showFullSummary ? transcript.summary : summaryPreview}
             {hasMore && !showFullSummary && '...'}
@@ -147,7 +147,7 @@ function ConversationCard({ transcript }: { transcript: Transcript }) {
                 e.preventDefault();
                 setShowFullSummary(!showFullSummary);
               }}
-              className="text-blue-600 hover:text-blue-700 font-medium mt-1"
+              className="mt-1 font-medium text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
             >
               {showFullSummary ? 'Show less' : 'Show more'}
             </button>
@@ -155,13 +155,13 @@ function ConversationCard({ transcript }: { transcript: Transcript }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-4 text-sm text-gray-500">
+        <div className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-1">
             <div className="flex -space-x-2">
               {transcript.speakers?.slice(0, 3).map((speaker, i) => (
                 <div
                   key={i}
-                  className="w-6 h-6 rounded-full bg-blue-500 border-2 border-white flex items-center justify-center text-white text-xs font-semibold"
+                  className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-blue-500 text-xs font-semibold text-white dark:border-slate-900"
                 >
                   {speaker.name[0]}
                 </div>

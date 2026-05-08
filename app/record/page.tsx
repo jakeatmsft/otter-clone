@@ -985,10 +985,10 @@ export default function RecordPage() {
   return (
     <>
       <div className="pr-80 pb-28">
-        <div className="bg-white border-b border-gray-200 px-8 py-6">
+        <div className="border-b border-slate-200 bg-white px-8 py-6 dark:border-slate-800 dark:bg-slate-900">
           <div className="max-w-5xl">
-            <h1 className="mb-3 text-3xl font-bold text-gray-900">Record</h1>
-            <div className="text-sm text-gray-600">
+            <h1 className="mb-3 text-3xl font-bold text-slate-900 dark:text-slate-100">Record</h1>
+            <div className="text-sm text-slate-600 dark:text-slate-400">
               Capture audio with a live transcript preview, then save the full recording for
               playback.
             </div>
@@ -997,27 +997,27 @@ export default function RecordPage() {
 
         <div className="px-8 py-6">
           <div className="max-w-5xl space-y-6">
-            <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
+            <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <label className="block">
-                  <span className="text-sm font-medium text-gray-700">Title</span>
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Title</span>
                   <input
                     value={noteTitle}
                     onChange={(event) => setNoteTitle(event.target.value)}
                     disabled={isRecording || isProcessing}
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:disabled:bg-slate-800"
                     placeholder={autoTitleRef.current}
                   />
                 </label>
 
                 <label className="block min-w-0">
-                  <span className="text-sm font-medium text-gray-700">Audio input source</span>
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Audio input source</span>
                   <div className="mt-1 flex min-w-0 gap-2">
                     <select
                       value={selectedInputId}
                       onChange={(event) => setSelectedInputId(event.target.value)}
                       disabled={isRecording || isProcessing || isPreparing || !displayedInputs.length}
-                      className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:disabled:bg-slate-800"
                     >
                       {displayedInputs.length === 0 ? (
                         <option value="">No microphone detected</option>
@@ -1037,7 +1037,7 @@ export default function RecordPage() {
                         });
                       }}
                       disabled={isRecording || isProcessing || isPreparing}
-                      className="shrink-0 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:bg-gray-50 disabled:text-gray-400"
+                      className="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
                     >
                       Refresh
                     </button>
@@ -1045,36 +1045,36 @@ export default function RecordPage() {
                 </label>
               </div>
 
-              <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/70">
                 <input
                   type="checkbox"
                   checked={includeLoopback}
                   onChange={(event) => setIncludeLoopback(event.target.checked)}
                   disabled={isRecording || isProcessing || isPreparing}
-                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900"
                 />
                 <div>
-                  <div className="text-sm font-medium text-gray-900">
+                  <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
                     Include output loopback audio
                   </div>
-                  <div className="mt-0.5 text-xs text-gray-600">
+                  <div className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
                     On start, the browser will ask you to share a tab/window/screen. Enable
                     audio sharing to capture system output.
                   </div>
                 </div>
               </label>
 
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
                 Current input:{' '}
-                <span className="font-medium text-gray-700">{selectedDeviceLabel}</span>
+                <span className="font-medium text-slate-700 dark:text-slate-200">{selectedDeviceLabel}</span>
               </div>
             </div>
 
             {!isRecording ? (
-              <div className="rounded-xl border border-gray-200 bg-white py-16 text-center">
+              <div className="rounded-xl border border-slate-200 bg-white py-16 text-center dark:border-slate-800 dark:bg-slate-900">
                 <div className="mb-4 text-5xl">Audio</div>
-                <h2 className="mb-2 text-2xl font-bold text-gray-900">{recordingTitle}</h2>
-                <p className="mx-auto mb-8 max-w-xl px-4 text-gray-600">
+                <h2 className="mb-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{recordingTitle}</h2>
+                <p className="mx-auto mb-8 max-w-xl px-4 text-slate-600 dark:text-slate-400">
                   {isProcessing
                     ? 'Finishing the full recording and saving the final transcript.'
                     : 'Choose your input source and start recording when you are ready.'}
@@ -1089,36 +1089,36 @@ export default function RecordPage() {
                 </button>
               </div>
             ) : (
-              <div className="rounded-xl border border-gray-200 bg-white p-8">
-                <div className="mb-6 text-center text-gray-600">
+              <div className="rounded-xl border border-slate-200 bg-white p-8 dark:border-slate-800 dark:bg-slate-900">
+                <div className="mb-6 text-center text-slate-600 dark:text-slate-400">
                   {includeLoopback
                     ? 'Streaming microphone and loopback audio into the live transcript preview while saving the full recording.'
                     : 'Streaming microphone audio into the live transcript preview while saving the full recording.'}
                 </div>
-                <div className="text-center font-mono text-4xl text-gray-900">
+                <div className="text-center font-mono text-4xl text-slate-900 dark:text-slate-100">
                   {formatClockDuration(duration)}
                 </div>
               </div>
             )}
 
             {(statusMessage || errorMessage || previewTranscript) && (
-              <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-5">
-                <div className="text-sm text-gray-700">
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                <div className="text-sm text-slate-700 dark:text-slate-300">
                   <span className="font-semibold">Status:</span> {statusMessage}
                 </div>
 
                 {errorMessage && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
                     {errorMessage}
                   </div>
                 )}
 
                 {previewTranscript && (
                   <div>
-                    <div className="mb-1 text-sm font-semibold text-gray-800">
+                    <div className="mb-1 text-sm font-semibold text-slate-800 dark:text-slate-200">
                       Live transcript
                     </div>
-                    <p className="max-h-80 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
+                    <p className="max-h-80 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-300">
                       {previewTranscript}
                     </p>
                   </div>
@@ -1130,20 +1130,20 @@ export default function RecordPage() {
       </div>
 
       {isRecording && (
-        <div className="fixed bottom-0 left-60 right-0 z-20 border-t border-gray-200 bg-white px-8 py-5">
+        <div className="fixed bottom-0 left-60 right-0 z-20 border-t border-slate-200 bg-white px-8 py-5 dark:border-slate-800 dark:bg-slate-900">
           <div className="mx-auto flex max-w-5xl items-center gap-6">
             <button
               onClick={handlePause}
-              className="rounded-full bg-gray-100 p-4 transition-colors hover:bg-gray-200"
+              className="rounded-full bg-slate-100 p-4 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"
               title={isPaused ? 'Resume' : 'Pause'}
             >
               {isPaused ? (
-                <svg className="h-6 w-6 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
+                <svg className="h-6 w-6 text-slate-700 dark:text-slate-200" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
               ) : (
                 <svg
-                  className="h-6 w-6 text-gray-700"
+                  className="h-6 w-6 text-slate-700 dark:text-slate-200"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -1179,12 +1179,12 @@ export default function RecordPage() {
                     isPaused ? 'bg-yellow-500' : 'animate-pulse bg-red-500'
                   }`}
                 />
-                <span className="text-sm font-medium text-gray-700">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
                   {isPaused ? 'Paused' : 'Recording'}
                 </span>
               </div>
 
-              <div className="h-2 flex-1 rounded-full bg-gray-200">
+              <div className="h-2 flex-1 rounded-full bg-slate-200 dark:bg-slate-800">
                 <div
                   className={`h-2 rounded-full transition-all ${
                     isPaused ? 'bg-yellow-500' : 'bg-red-500'
@@ -1193,7 +1193,7 @@ export default function RecordPage() {
                 />
               </div>
 
-              <span className="min-w-[4rem] font-mono text-sm text-gray-700">
+              <span className="min-w-[4rem] font-mono text-sm text-slate-700 dark:text-slate-200">
                 {formatClockDuration(duration)}
               </span>
             </div>
