@@ -5,9 +5,15 @@ const {
   normalizeAzureCredentialError,
   resolveAzureScope,
 } = require('./lib/azure-auth');
+const {
+  createFoundryLocalRealtimeSession,
+  getFoundryLocalRealtimeSampleRate,
+} = require('./lib/foundry-local');
+const { getTranscriptionProvider } = require('./lib/transcription-provider');
 
 const DEFAULT_REALTIME_API_VERSION = '2024-10-01-preview';
 const DEFAULT_REALTIME_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
+const AZURE_REALTIME_SAMPLE_RATE = 24000;
 const PLACEHOLDER_PATTERN = /^(your[-_].*|replace-with-.*)$/i;
 const CLOSE_DELAY_MS = 100;
 const STOP_FALLBACK_MS = 2000;
@@ -199,6 +205,13 @@ function normalizeAzureRealtimeError(error) {
   return 'Azure rejected the realtime websocket upgrade. Confirm AZURE_OPENAI_REALTIME_TRANSCRIBE_DEPLOYMENT points to a realtime-capable deployment and that the Record page is not targeting a batch transcription deployment.';
 }
 
+function buildSessionReadyPayload(sampleRate) {
+  return {
+    type: 'session.ready',
+    sampleRate,
+  };
+}
+
 function createOrderedTranscript() {
   const itemOrder = [];
   const transcriptByItemId = new Map();
@@ -247,7 +260,7 @@ function createOrderedTranscript() {
   };
 }
 
-async function attachRealtimeBridge(browserSocket) {
+async function attachAzureRealtimeBridge(browserSocket) {
   let azureSocket;
   let bridgeReady = false;
   let connectTimeout = null;
@@ -324,7 +337,7 @@ async function attachRealtimeBridge(browserSocket) {
 
     bridgeReady = true;
     clearReadyTimeout();
-    sendBrowser({ type: 'session.ready' });
+    sendBrowser(buildSessionReadyPayload(AZURE_REALTIME_SAMPLE_RATE));
   }
 
   function scheduleReadyTimeout() {
@@ -543,14 +556,216 @@ async function attachRealtimeBridge(browserSocket) {
   });
 }
 
+async function attachFoundryLocalRealtimeBridge(browserSocket) {
+  let finalized = false;
+  let session = null;
+  let stopFallbackTimer = null;
+  let stopRequested = false;
+  const finalizedSegments = [];
+  let partialTranscript = '';
+
+  function clearStopFallback() {
+    if (stopFallbackTimer) {
+      clearTimeout(stopFallbackTimer);
+      stopFallbackTimer = null;
+    }
+  }
+
+  function sendBrowser(payload) {
+    if (browserSocket.readyState === WebSocket.OPEN) {
+      browserSocket.send(JSON.stringify(payload));
+    }
+  }
+
+  function fullTranscript() {
+    return [...finalizedSegments, partialTranscript.trim()]
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  function finalizeSession() {
+    if (finalized) {
+      return;
+    }
+
+    finalized = true;
+    clearStopFallback();
+    sendBrowser({
+      type: 'session.finalized',
+      fullTranscript: fullTranscript(),
+    });
+
+    setTimeout(() => {
+      if (session) {
+        session.dispose().catch(() => undefined);
+      }
+      if (browserSocket.readyState === WebSocket.OPEN) {
+        browserSocket.close(1000, 'Realtime transcription complete');
+      }
+    }, CLOSE_DELAY_MS);
+  }
+
+  function scheduleStopFallback() {
+    clearStopFallback();
+    stopFallbackTimer = setTimeout(() => {
+      finalizeSession();
+    }, STOP_FALLBACK_MS);
+  }
+
+  function handleBridgeError(message) {
+    clearStopFallback();
+    sendBrowser({ type: 'error', error: message });
+    if (session) {
+      session.dispose().catch(() => undefined);
+    }
+    if (browserSocket.readyState === WebSocket.OPEN) {
+      browserSocket.close(1011, 'Realtime bridge error');
+    }
+  }
+
+  try {
+    const startedSession = await createFoundryLocalRealtimeSession();
+    session = startedSession.session;
+    sendBrowser(buildSessionReadyPayload(startedSession.sampleRate));
+  } catch (error) {
+    handleBridgeError(
+      error && error.message ? error.message : 'Failed to start Foundry Local realtime transcription.'
+    );
+    return;
+  }
+
+  (async () => {
+    try {
+      for await (const result of session.getStream()) {
+        const text =
+          result &&
+          result.content &&
+          result.content[0] &&
+          (result.content[0].text || result.content[0].transcript);
+
+        if (typeof text !== 'string' || !text.trim()) {
+          continue;
+        }
+
+        if (result.is_final) {
+          partialTranscript = '';
+          finalizedSegments.push(text.trim());
+        } else {
+          partialTranscript = text;
+        }
+
+        sendBrowser({
+          type: 'transcript.updated',
+          fullTranscript: fullTranscript(),
+          isFinal: Boolean(result.is_final),
+        });
+      }
+
+      if (!finalized) {
+        finalizeSession();
+      }
+    } catch (error) {
+      if (finalized) {
+        return;
+      }
+
+      handleBridgeError(
+        error && error.message
+          ? error.message
+          : 'Foundry Local realtime transcription failed.'
+      );
+    }
+  })();
+
+  browserSocket.on('message', (rawMessage) => {
+    let message;
+
+    try {
+      message = JSON.parse(rawMessage.toString());
+    } catch (error) {
+      handleBridgeError('Received malformed browser realtime payload.');
+      return;
+    }
+
+    if (!session) {
+      return;
+    }
+
+    if (message.type === 'audio.append') {
+      if (typeof message.audio !== 'string' || !message.audio || finalized) {
+        return;
+      }
+
+      session.append(Buffer.from(message.audio, 'base64')).catch((error) => {
+        if (stopRequested || finalized) {
+          return;
+        }
+
+        handleBridgeError(
+          error && error.message
+            ? error.message
+            : 'Failed to append audio to the Foundry Local session.'
+        );
+      });
+      return;
+    }
+
+    if (message.type === 'audio.stop') {
+      if (stopRequested || finalized) {
+        return;
+      }
+
+      stopRequested = true;
+      scheduleStopFallback();
+      session.stop().catch((error) => {
+        if (finalized) {
+          return;
+        }
+
+        handleBridgeError(
+          error && error.message
+            ? error.message
+            : 'Failed to stop the Foundry Local transcription session.'
+        );
+      });
+    }
+  });
+
+  browserSocket.on('close', () => {
+    clearStopFallback();
+    if (session) {
+      session.dispose().catch(() => undefined);
+    }
+  });
+
+  browserSocket.on('error', () => {
+    clearStopFallback();
+    if (session) {
+      session.dispose().catch(() => undefined);
+    }
+  });
+}
+
+async function attachRealtimeBridge(browserSocket) {
+  if (getTranscriptionProvider() === 'foundry-local') {
+    return attachFoundryLocalRealtimeBridge(browserSocket);
+  }
+
+  return attachAzureRealtimeBridge(browserSocket);
+}
+
 module.exports = {
   attachRealtimeBridge,
   __test__: {
+    AZURE_REALTIME_SAMPLE_RATE,
     buildAzureRealtimeUrl,
     buildRealtimeSessionUpdateEvent,
+    buildSessionReadyPayload,
+    getFoundryLocalRealtimeSampleRate,
     getAzureRealtimeDeployment,
     getAzureRealtimeScope,
     getAzureRealtimeTranscriptionModel,
+    getTranscriptionProvider,
     hasExplicitRealtimeDeployment,
     isMissingOrPlaceholder,
     normalizeAzureRealtimeError,

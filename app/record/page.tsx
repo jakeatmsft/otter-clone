@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createDefaultTranscriptTitle } from '@/lib/transcript-title';
 import RightPanel from '../components/layout/RightPanel';
 
-const TARGET_SAMPLE_RATE = 24000;
+const DEFAULT_REALTIME_SAMPLE_RATE = 24000;
 const SCRIPT_PROCESSOR_BUFFER_SIZE = 4096;
 const MEDIA_RECORDER_TIMESLICE_MS = 1000;
 const REALTIME_FINALIZATION_TIMEOUT_MS = 4000;
@@ -118,12 +118,16 @@ function normalizeError(error: unknown) {
   return 'An unexpected audio capture error occurred.';
 }
 
-function encodePcm16Chunk(float32Samples: Float32Array, inputRate: number) {
-  if (inputRate <= 0) {
+function encodePcm16Chunk(
+  float32Samples: Float32Array,
+  inputRate: number,
+  targetSampleRate: number
+) {
+  if (inputRate <= 0 || targetSampleRate <= 0) {
     return '';
   }
 
-  const sampleRateRatio = inputRate / TARGET_SAMPLE_RATE;
+  const sampleRateRatio = inputRate / targetSampleRate;
   const outputLength = Math.max(1, Math.round(float32Samples.length / sampleRateRatio));
   const pcm16 = new Int16Array(outputLength);
   let inputOffset = 0;
@@ -183,7 +187,7 @@ type SavedTranscriptSegment = {
 type RealtimeServerMessage =
   | { type: 'error'; error?: string }
   | { type: 'session.finalized'; fullTranscript?: string }
-  | { type: 'session.ready' }
+  | { type: 'session.ready'; sampleRate?: number }
   | { type: 'speech.started' }
   | { type: 'speech.stopped' }
   | { type: 'transcript.updated'; fullTranscript?: string; isFinal?: boolean };
@@ -214,6 +218,7 @@ export default function RecordPage() {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordingMimeTypeRef = useRef('');
+  const realtimeSampleRateRef = useRef(DEFAULT_REALTIME_SAMPLE_RATE);
   const silentGainRef = useRef<GainNode | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const transcriptRef = useRef('');
@@ -525,6 +530,10 @@ export default function RecordPage() {
         }
 
         if (message.type === 'session.ready') {
+          realtimeSampleRateRef.current =
+            typeof message.sampleRate === 'number' && message.sampleRate > 0
+              ? message.sampleRate
+              : DEFAULT_REALTIME_SAMPLE_RATE;
           readyResolved = true;
           setStatusMessage(
             includeLoopback
@@ -674,6 +683,7 @@ export default function RecordPage() {
     setDuration(0);
     setIsPreparing(true);
     setStatusMessage('Requesting microphone access...');
+    realtimeSampleRateRef.current = DEFAULT_REALTIME_SAMPLE_RATE;
     transcriptRef.current = '';
 
     try {
@@ -794,7 +804,8 @@ export default function RecordPage() {
 
         const audioChunk = encodePcm16Chunk(
           event.inputBuffer.getChannelData(0),
-          audioContext.sampleRate
+          audioContext.sampleRate,
+          realtimeSampleRateRef.current
         );
 
         if (!audioChunk) {

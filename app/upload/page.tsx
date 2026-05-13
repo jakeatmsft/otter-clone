@@ -115,28 +115,56 @@ export default function UploadPage() {
           : derivedDurationSeconds > 0
             ? Math.max(1, derivedDurationSeconds)
             : null;
+      const transcriptPayload = {
+        audioFilename: uploadData.filename,
+        title: title.trim() || defaultTitleFromFile(file.name),
+        transcript,
+        duration: durationSeconds ? formatHumanDuration(durationSeconds) : 'Unknown duration',
+        speakers: [{ name: 'Speaker 1', percentage: 100 }],
+        segments,
+      };
+
+      const saveTranscriptWithoutSummary = async (status: string) => {
+        setStatusMessage(status);
+        const saveResponse = await fetch('/api/transcripts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(transcriptPayload),
+        });
+        const saveData = await saveResponse.json();
+
+        if (!saveResponse.ok || !saveData.id) {
+          throw new Error(saveData.error || 'Failed to save transcript.');
+        }
+
+        return saveData;
+      };
 
       setStatusMessage('Generating summary and saving transcript...');
-      const summarizeResponse = await fetch('/api/summarize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audioFilename: uploadData.filename,
-          title: title.trim() || defaultTitleFromFile(file.name),
-          transcript,
-          duration: durationSeconds ? formatHumanDuration(durationSeconds) : 'Unknown duration',
-          speakers: [{ name: 'Speaker 1', percentage: 100 }],
-          segments,
-        }),
-      });
-      const summarizeData = await summarizeResponse.json();
+      let savedId = '';
 
-      if (!summarizeResponse.ok || !summarizeData.id) {
-        throw new Error(summarizeData.error || 'Failed to save transcript.');
+      try {
+        const summarizeResponse = await fetch('/api/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(transcriptPayload),
+        });
+        const summarizeData = await summarizeResponse.json();
+
+        if (!summarizeResponse.ok || !summarizeData.id) {
+          throw new Error(summarizeData.error || 'Failed to save transcript.');
+        }
+
+        savedId = String(summarizeData.id);
+      } catch (error) {
+        const saveData = await saveTranscriptWithoutSummary(
+          'Summarization unavailable. Saving transcript without summary...'
+        );
+        savedId = String(saveData.id);
       }
 
       setStatusMessage('Saved. Opening transcript...');
-      router.push(`/transcripts/${summarizeData.id}`);
+      router.push(`/transcripts/${savedId}`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'An unexpected error occurred.';

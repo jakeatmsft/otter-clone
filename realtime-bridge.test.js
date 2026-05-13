@@ -98,3 +98,14 @@ test('buildRealtimeSessionUpdateEvent uses realtime session.update and disables 
     }
   );
 });
+
+test('buildSessionReadyPayload includes the provider-specific sample rate', () => {
+  assert.deepEqual(
+    __test__.buildSessionReadyPayload(__test__.AZURE_REALTIME_SAMPLE_RATE),
+    {
+      type: 'session.ready',
+      sampleRate: 24000,
+    }
+  );
+  assert.equal(__test__.getFoundryLocalRealtimeSampleRate(), 16000);
+});
