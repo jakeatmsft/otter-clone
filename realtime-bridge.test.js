@@ -109,3 +109,72 @@ test('buildSessionReadyPayload includes the provider-specific sample rate', () =
   );
   assert.equal(__test__.getFoundryLocalRealtimeSampleRate(), 16000);
 });
+
+test('Foundry Local transcript log appends partial deltas and appends new utterances', () => {
+  const log = __test__.createFoundryLocalTranscriptLog();
+
+  log.upsert(
+    { id: 'utt-1', is_final: false, start_time: 0 },
+    'hello'
+  );
+  assert.equal(log.fullTranscript(), 'hello');
+
+  log.upsert(
+    { id: 'utt-1', is_final: false, start_time: 0 },
+    'world'
+  );
+  assert.equal(log.fullTranscript(), 'hello world');
+
+  log.upsert(
+    { id: 'utt-1', is_final: true, start_time: 0 },
+    'hello world'
+  );
+  assert.equal(log.fullTranscript(), 'hello world');
+
+  log.upsert(
+    { id: 'utt-2', is_final: false, start_time: 2.5 },
+    'next utterance'
+  );
+  assert.equal(log.fullTranscript(), 'hello world\n\nnext utterance');
+
+  log.upsert(
+    { id: 'utt-2', is_final: true, start_time: 2.5 },
+    'next utterance complete'
+  );
+  assert.equal(log.fullTranscript(), 'hello world\n\nnext utterance complete');
+});
+
+test('Foundry Local transcript log replaces rolling full-hypothesis updates for the same utterance', () => {
+  const log = __test__.createFoundryLocalTranscriptLog();
+
+  log.upsert(
+    { id: 'utt-1', is_final: false, start_time: 0 },
+    'hello wor'
+  );
+  log.upsert(
+    { id: 'utt-1', is_final: false, start_time: 0 },
+    'hello world'
+  );
+  assert.equal(log.fullTranscript(), 'hello world');
+
+  log.upsert(
+    { id: 'utt-1', is_final: true, start_time: 0 },
+    'hello world'
+  );
+  assert.equal(log.fullTranscript(), 'hello world');
+});
+
+test('Foundry Local transcript log falls back to start_time and anonymous sequence keys', () => {
+  const log = __test__.createFoundryLocalTranscriptLog();
+
+  log.upsert({ is_final: false, start_time: 1.25 }, 'first draft');
+  log.upsert({ is_final: false, start_time: 1.25 }, 'first draft updated');
+  assert.equal(log.fullTranscript(), 'first draft updated');
+
+  log.upsert({ is_final: true, start_time: 1.25 }, 'first final');
+  log.upsert({ is_final: false }, 'second draft');
+  assert.equal(log.fullTranscript(), 'first final\n\nsecond draft');
+
+  log.upsert({ is_final: true }, 'second final');
+  assert.equal(log.fullTranscript(), 'first final\n\nsecond final');
+});

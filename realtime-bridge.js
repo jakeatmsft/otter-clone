@@ -260,6 +260,141 @@ function createOrderedTranscript() {
   };
 }
 
+function createFoundryLocalTranscriptLog() {
+  const utteranceOrder = [];
+  const transcriptByUtteranceKey = new Map();
+  let activeUtteranceKey = null;
+  let anonymousUtteranceCount = 0;
+
+  function commonPrefixLength(left, right) {
+    const limit = Math.min(left.length, right.length);
+    let count = 0;
+
+    while (count < limit && left[count] === right[count]) {
+      count += 1;
+    }
+
+    return count;
+  }
+
+  function suffixPrefixOverlap(left, right) {
+    const limit = Math.min(left.length, right.length);
+
+    for (let length = limit; length > 0; length -= 1) {
+      if (left.slice(-length) === right.slice(0, length)) {
+        return length;
+      }
+    }
+
+    return 0;
+  }
+
+  function mergeTranscript(currentTranscript, incomingTranscript, isFinal) {
+    const current = typeof currentTranscript === 'string' ? currentTranscript.trim() : '';
+    const incoming =
+      typeof incomingTranscript === 'string' ? incomingTranscript.trim() : '';
+
+    if (!incoming) {
+      return current;
+    }
+
+    if (!current || isFinal) {
+      return incoming;
+    }
+
+    if (incoming === current) {
+      return current;
+    }
+
+    if (incoming.startsWith(current)) {
+      return incoming;
+    }
+
+    if (current.startsWith(incoming)) {
+      return current;
+    }
+
+    const prefixLength = commonPrefixLength(current, incoming);
+    if (prefixLength >= Math.min(current.length, incoming.length) * 0.75) {
+      return incoming;
+    }
+
+    const overlapLength = suffixPrefixOverlap(current, incoming);
+    if (overlapLength > 0) {
+      return `${current}${incoming.slice(overlapLength)}`.trim();
+    }
+
+    const separator =
+      /^[,.;:!?)]/.test(incoming) || /[\s(/-]$/.test(current) ? '' : ' ';
+
+    return `${current}${separator}${incoming}`.trim();
+  }
+
+  function buildUtteranceKey(result) {
+    if (result && typeof result.id === 'string' && result.id.trim()) {
+      return `id:${result.id.trim()}`;
+    }
+
+    if (
+      result &&
+      typeof result.start_time === 'number' &&
+      Number.isFinite(result.start_time)
+    ) {
+      return `start:${result.start_time.toFixed(3)}`;
+    }
+
+    return null;
+  }
+
+  function ensureUtterance(result) {
+    let key = buildUtteranceKey(result);
+
+    if (!key) {
+      if (activeUtteranceKey) {
+        return activeUtteranceKey;
+      }
+
+      anonymousUtteranceCount += 1;
+      key = `seq:${anonymousUtteranceCount}`;
+    }
+
+    if (!transcriptByUtteranceKey.has(key)) {
+      utteranceOrder.push(key);
+      transcriptByUtteranceKey.set(key, '');
+    }
+
+    activeUtteranceKey = key;
+    return key;
+  }
+
+  function upsert(result, transcript) {
+    const key = ensureUtterance(result);
+    const currentTranscript = transcriptByUtteranceKey.get(key) || '';
+    transcriptByUtteranceKey.set(
+      key,
+      mergeTranscript(currentTranscript, transcript, Boolean(result && result.is_final))
+    );
+
+    if (result && result.is_final) {
+      activeUtteranceKey = null;
+    }
+
+    return key;
+  }
+
+  function fullTranscript() {
+    return utteranceOrder
+      .map((key) => (transcriptByUtteranceKey.get(key) || '').trim())
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  return {
+    fullTranscript,
+    upsert,
+  };
+}
+
 async function attachAzureRealtimeBridge(browserSocket) {
   let azureSocket;
   let bridgeReady = false;
@@ -561,8 +696,7 @@ async function attachFoundryLocalRealtimeBridge(browserSocket) {
   let session = null;
   let stopFallbackTimer = null;
   let stopRequested = false;
-  const finalizedSegments = [];
-  let partialTranscript = '';
+  const transcriptLog = createFoundryLocalTranscriptLog();
 
   function clearStopFallback() {
     if (stopFallbackTimer) {
@@ -577,12 +711,6 @@ async function attachFoundryLocalRealtimeBridge(browserSocket) {
     }
   }
 
-  function fullTranscript() {
-    return [...finalizedSegments, partialTranscript.trim()]
-      .filter(Boolean)
-      .join('\n\n');
-  }
-
   function finalizeSession() {
     if (finalized) {
       return;
@@ -592,7 +720,7 @@ async function attachFoundryLocalRealtimeBridge(browserSocket) {
     clearStopFallback();
     sendBrowser({
       type: 'session.finalized',
-      fullTranscript: fullTranscript(),
+      fullTranscript: transcriptLog.fullTranscript(),
     });
 
     setTimeout(() => {
@@ -647,16 +775,11 @@ async function attachFoundryLocalRealtimeBridge(browserSocket) {
           continue;
         }
 
-        if (result.is_final) {
-          partialTranscript = '';
-          finalizedSegments.push(text.trim());
-        } else {
-          partialTranscript = text;
-        }
+        transcriptLog.upsert(result, text.trim());
 
         sendBrowser({
           type: 'transcript.updated',
-          fullTranscript: fullTranscript(),
+          fullTranscript: transcriptLog.fullTranscript(),
           isFinal: Boolean(result.is_final),
         });
       }
@@ -759,6 +882,7 @@ module.exports = {
   __test__: {
     AZURE_REALTIME_SAMPLE_RATE,
     buildAzureRealtimeUrl,
+    createFoundryLocalTranscriptLog,
     buildRealtimeSessionUpdateEvent,
     buildSessionReadyPayload,
     getFoundryLocalRealtimeSampleRate,

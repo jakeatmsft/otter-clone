@@ -239,7 +239,12 @@ export default function TranscriptDetail() {
         </div>
       </div>
 
-      <RightPanel tabs={['Chat', 'Outline', 'Comments']} defaultTab="Chat" />
+      <RightPanel
+        tabs={['Chat', 'Outline', 'Comments']}
+        defaultTab="Chat"
+        transcriptId={data.id}
+        transcriptTitle={data.title}
+      />
     </>
   );
 }
